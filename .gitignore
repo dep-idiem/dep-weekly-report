@@ -1,0 +1,33 @@
+# Credenciales y sesiones
+.env
+*.cookies
+peritaje/session.json
+
+# Dumps de HTML de tsheet (contienen nombres e IDs de personas)
+peritaje/dump/
+tsheet_dump/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Datos del sincronizador (personas, IDs, horas)
+data/
+secrets/
+# Excel de referencia de reportes (contiene nombres de personas)
+fixtures/
+
+# Salida generada de los reportes (IDs de usuario, nombres de tareas)
+reportes/
+
+# Este repo (dep-weekly-report) contiene solo los reportes. El sincronizador de tsheet, el peritaje
+# y las especificaciones de las tareas quedan fuera.
+dep_sync/
+peritaje/
+tsheet_recon.py
+tests/test_dep_sync.py
+TAREA_*.md
+.claude/
+.pytest_cache/
+.venv/
+venv*/

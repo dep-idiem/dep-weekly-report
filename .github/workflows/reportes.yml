@@ -1,0 +1,90 @@
+name: Reportes DEP
+
+on:
+  # CRON DESACTIVADOS hasta la autorización (fase 3, paso 6). Para activarlos, descomentar las 4 líneas.
+  # GitHub usa UTC y Chile cambia de horario; el worker decide por la hora de Santiago y termina sin hacer
+  # nada si no le corresponde (ventana oficial 04:00-05:59 del lunes; preliminar 19:00-20:59 de martes a domingo).
+  #   Oficial:    lunes 04:00 Santiago     = 07:00 UTC (verano, UTC-3) / 08:00 UTC (invierno, UTC-4)
+  #   Preliminar: mar-dom 19:00 Santiago   = 22:00 UTC (verano)        / 23:00 UTC (invierno)
+  # schedule:
+  #   - cron: "0 7,8 * * 1"
+  #   - cron: "0 22,23 * * 0,2-6"
+  workflow_dispatch:
+    inputs:
+      tipo:
+        description: "Tipo de corrida"
+        type: choice
+        options: [preliminar, oficial]
+        default: preliminar
+        required: true
+      corte:
+        description: "Corte AAAA-MM-DD (opcional; oficial = último domingo, preliminar = ayer)"
+        type: string
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry-run (CSV como artefacto, sin escribir en Sheets)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reportes-dep
+  cancel-in-progress: false
+
+jobs:
+  reporte:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONTZPATH: ""          # usar el paquete tzdata fijado en requirements-worker.txt
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.5"
+          cache: pip
+          cache-dependency-path: requirements-worker.txt
+
+      - name: Instalar dependencias (versiones fijas)
+        run: python -m pip install --disable-pip-version-check -r requirements-worker.txt
+
+      - name: Ejecutar reporte
+        env:
+          CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
+          GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          SHEETS_REPORTES_ID: ${{ secrets.SHEETS_REPORTES_ID }}
+          EVENTO: ${{ github.event_name }}
+          TIPO: ${{ inputs.tipo }}
+          CORTE: ${{ inputs.corte }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(--evento "$EVENTO" --corte "$CORTE" --dry-run "${DRY_RUN:-false}")
+          if [ -n "$TIPO" ]; then args+=(--tipo "$TIPO"); fi
+          python -m dep_reportes.worker "${args[@]}"
+
+      - name: Subir respaldo previo a la escritura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: respaldo-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reportes/respaldos/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Subir CSV del dry-run
+        if: always() && inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: dry-run-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reportes/dry_run/
+          retention-days: 7
+          if-no-files-found: ignore

@@ -1,0 +1,10 @@
+requests
+beautifulsoup4
+python-dotenv
+truststore
+pytest
+openpyxl
+matplotlib
+google-auth
+google-auth-oauthlib
+holidays

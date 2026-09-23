@@ -1,0 +1,5 @@
+{
+  "dias_ventana_horas": 7,
+  "caida_max_proyectos": 0.20,
+  "tolerancia_total_hh": 1e-6
+}
