@@ -67,6 +67,7 @@ class Task:
     date_updated: dt.datetime | None = None
     url: str = ""
     status_type: str = ""       # open / custom / done / closed
+    date_created: dt.datetime | None = None
 
     @property
     def cerrada(self) -> bool:

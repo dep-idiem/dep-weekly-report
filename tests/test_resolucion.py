@@ -9,7 +9,7 @@ from dep_reportes import almacen as A, calidad, esquema as E, proyecto as P, res
 
 TODOS_LOS_TIPOS = sorted({v for k, v in vars(P).items() if k.startswith("ADV_")} | set(calidad.SEVERIDAD))
 RESPONSABLES = {RES.JP, RES.administracion(), RES.INFORMATIVA}
-IMPACTOS = {RES.IMPIDE, RES.DISTORSIONA, RES.INFORMATIVA}
+IMPACTOS = {RES.IMPIDE, RES.DISTORSIONA, RES.INFORMATIVA, RES.IMPIDE_PRESUPUESTO}
 LARGO = "Tarea con un nombre bastante largo para probar el recorte del texto en la hoja de advertencias"
 
 
@@ -53,7 +53,7 @@ def test_impacto_depende_de_la_linea_base():
 def test_ejemplos_de_texto():
     r = RES.resolver("hh_sin_start_o_due", RES.Contexto("Visita 2/2", "x", True, {"falta": "start y due"}))
     assert r == {"como_resolver": "En ClickUp, asigna fecha de inicio y de término a «Visita 2/2».",
-                 "responsable_accion": "JP", "impacto": RES.DISTORSIONA}
+                 "responsable_accion": "JP", "impacto": RES.DISTORSIONA, "prioridad": RES.NORMAL}
     r = RES.resolver("sin_jp", RES.Contexto(lista="2026.0040 · Estudio"))
     assert r["responsable_accion"] == "Administración DEP" and "«2026.0040 · Estudio»" in r["como_resolver"]
     r = RES.resolver("nombre_lista_sin_formato", RES.Contexto(datos={"codigo": "PJ-2024.0008", "nombre": "AITO"}))
@@ -61,7 +61,7 @@ def test_ejemplos_de_texto():
     assert RES.resolver("linea_base_tardia", RES.Contexto(datos={"fecha": dt.date(2026, 9, 23)}))[
         "responsable_accion"] == RES.INFORMATIVA
     assert RES.resolver("sin_termino_vigente", RES.Contexto()) == \
-        {"como_resolver": None, "responsable_accion": None, "impacto": None}
+        {"como_resolver": None, "responsable_accion": None, "impacto": None, "prioridad": None}
 
 
 def test_responsable_administracion_sale_de_config(monkeypatch):
@@ -72,7 +72,7 @@ def test_responsable_administracion_sale_de_config(monkeypatch):
 
 
 def test_esquema_y_filas_antiguas():
-    assert E.columnas("advertencias")[-3:] == ["como_resolver", "responsable_accion", "impacto"]
+    assert E.columnas("advertencias")[-4:] == ["como_resolver", "responsable_accion", "impacto", "prioridad"]
     f = A.completar("advertencias", [{"corte": dt.date(2026, 9, 13), "list_id": "1", "tipo": "horas_sin_avance",
                                       "proyecto": "2026.0152 · Nestlé"}], {})[0]
     assert f["responsable_accion"] == "JP" and f["impacto"] == RES.DISTORSIONA and f["como_resolver"]

@@ -149,8 +149,9 @@ def fusionar(tabla: str, existentes: Sequence[dict], nuevas: Sequence[dict], cor
             return tipo_corte == E.OFICIAL and c == corte
         return [f for f in existentes if not se_borra(f)] + list(nuevas)
     if tabla == "linea_base":
-        claves = {(f["list_id"], f["rev"]) for f in existentes}
-        return list(existentes) + [f for f in nuevas if (f["list_id"], f["rev"]) not in claves]
+        # Solo se agregan filas: una revision nueva, o filas incrementales (paquete nuevo) de la revision vigente.
+        claves = {(f["list_id"], f["rev"], f["task_id"]) for f in existentes}
+        return list(existentes) + [f for f in nuevas if (f["list_id"], f["rev"], f["task_id"]) not in claves]
     if tabla == "ejecuciones":
         return list(existentes) + list(nuevas)
     raise KeyError(tabla)
@@ -369,8 +370,8 @@ class AlmacenSheets:
             if t in meta:
                 reqs.append({"deleteSheet": {"sheetId": meta[t]["sheetId"]}})
         self._req("POST", f"{self.API}/{self.id}:batchUpdate", "escribir:batchUpdate", json={"requests": reqs})
-        if eliminar:
-            self.metadata(refrescar=True)
+        if eliminar or any("addSheet" in r for r in reqs):
+            self.metadata(refrescar=True)      # la verificacion posterior debe ver las pestañas nuevas
 
         data = []
         for t, filas in finales.items():

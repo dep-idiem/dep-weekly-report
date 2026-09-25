@@ -14,6 +14,8 @@ from .config_reportes import parametros
 
 JP, INFORMATIVA = "JP", "Informativa"
 IMPIDE, DISTORSIONA = "Impide la curva S", "Distorsiona las cifras"
+IMPIDE_PRESUPUESTO = "Impide el control de presupuesto"
+ALTA, NORMAL = "alta", "normal"
 MAX_NOMBRE = 45                   # nombres de tarea o lista mas largos se recortan con …
 
 
@@ -37,8 +39,14 @@ class Entrada:
     impacto_con_lb: str
     impacto_sin_lb: str
     accion: Callable[[Contexto, str], str]              # (contexto, nombre de administracion) -> texto
+    impacto_por_contexto: Callable[[Contexto], str | None] | None = None   # si devuelve algo, manda
+    prioridad: str = NORMAL                             # orden en la hoja y en los mensajes
 
-    def impacto(self, tiene_linea_base: bool) -> str:
+    def impacto(self, tiene_linea_base: bool, ctx: "Contexto | None" = None) -> str:
+        if self.impacto_por_contexto and ctx is not None:
+            i = self.impacto_por_contexto(ctx)
+            if i:
+                return i
         return self.impacto_con_lb if tiene_linea_base else self.impacto_sin_lb
 
 
@@ -169,9 +177,12 @@ CATALOGO.update({
         JP, INFORMATIVA, INFORMATIVA, lambda c, a: f"En ClickUp, reparte las HH Presupuestadas de {_t(c)} entre sus "
                                                    "subtareas y borra el valor del padre."),
     "horas_en_tarea_padre": Entrada(
-        "Hay horas registradas directamente en una tarea que tiene subtareas: no se sabe en qué subtarea se trabajó.",
+        "Hay horas registradas directamente en una tarea que tiene subtareas: no se sabe en qué subtarea se trabajó. "
+        "En un paquete con porciones es Informativa: las horas cuentan bien en la fase y solo se pierde el detalle "
+        "semanal.",
         JP, DISTORSIONA, DISTORSIONA, lambda c, a: f"Registra las horas en las subtareas de {_t(c)}, no en la tarea "
-                                                   "padre."),
+                                                   "padre.",
+        impacto_por_contexto=lambda c: INFORMATIVA if (c.datos or {}).get("paquete_con_porciones") else None),
     "horas_en_administracion": Entrada(
         "Las horas registradas en la fase 00 Administración superan el umbral del proyecto (config/reportes.json).",
         JP, DISTORSIONA, DISTORSIONA, lambda c, a: f"En la lista {_l(c)}, registra en las subtareas del trabajo "
@@ -199,6 +210,48 @@ CATALOGO.update({
         ADMIN, DISTORSIONA, DISTORSIONA, _tt_sin_clickup),
 })
 
+def _presupuesto(c: Contexto, adm: str) -> str:
+    d = c.datos or {}
+    if d.get("superado"):
+        return (f"Revisa con {adm} el presupuesto de la lista {_l(c)}: ya se superó. Si hay ampliación de contrato, "
+                "actualiza las HH Presupuestadas de «00 Administración».")
+    return (f"Revisa con {adm} el plan de {_l(c)}: el presupuesto se agota pronto. Si hay ampliación, actualiza "
+            "las HH de «00 Administración».")
+
+
+CATALOGO.update({
+    "fase_con_hh": Entrada(
+        "Una fase (tarea de nivel 0) tiene HH Presupuestadas. Para el cálculo cuenta como paquete (entra a la línea "
+        "base incremental cuando tiene fechas), pero las HH deben ir en un paquete dentro de la fase.",
+        JP, DISTORSIONA, DISTORSIONA, lambda c, a: f"Mueve las HH de la fase {_t(c)} a un paquete con fechas dentro de "
+                                                   "ella y deja la fase sin HH."),
+    "porcion_con_hh": Entrada(
+        "Una tarea con forma de porción semanal (misma tarea repetida por semana o persona) lleva HH Presupuestadas: "
+        "el presupuesto debe estar en el paquete y la porción solo con time estimate.",
+        JP, DISTORSIONA, DISTORSIONA, lambda c, a: f"Mueve las HH Presupuestadas de {_t(c)} a su paquete (la tarea "
+                                                   "padre) y deja la porción solo con time estimate."),
+    "sin_presupuesto_contractual": Entrada(
+        "El proyecto no tiene presupuesto contractual: no se puede controlar el consumo de HH frente a lo contratado.",
+        JP, IMPIDE_PRESUPUESTO, IMPIDE_PRESUPUESTO,
+        lambda c, a: f"En la lista {_l(c)}, carga las HH contratadas en el campo HH Presupuestadas de la tarea "
+                     "«00 Administración»."),
+    "presupuesto_por_agotarse": Entrada(
+        "El presupuesto contractual está superado o se agota en menos de 4 semanas al ritmo de las últimas 4.",
+        JP, INFORMATIVA, INFORMATIVA, _presupuesto, prioridad=ALTA),
+    "cumplimiento_semanal_fuera_de_rango": Entrada(
+        "Las horas registradas del proyecto quedaron bajo el 50 % o sobre el 150 % de lo planificado en las porciones "
+        "en 3 de las últimas 4 semanas (medido por proyecto, nunca por persona).",
+        JP, INFORMATIVA, INFORMATIVA, lambda c, a: f"Revisa con la planificadora el plan semanal de {_l(c)}: ajusta los "
+                                                   "time estimates de las porciones a la carga real o registra las "
+                                                   "horas que faltan."),
+    "paquete_desaparecido": Entrada(
+        "Un paquete congelado en la línea base ya no está en la lista (se borró o se movió). Sigue en la línea base.",
+        ADMIN, DISTORSIONA, DISTORSIONA, lambda c, a: f"Revisa con el JP de {_l(c)} si el paquete se movió o se "
+                                                      "eliminó del alcance; si corresponde, congela una revisión de "
+                                                      "la línea base."),
+})
+
+
 # Tipos sin solucion acordada todavia: columnas vacias hasta que se definan (propuestas en el informe).
 PENDIENTES: dict[str, str] = {
     "sin_tarea_1_2": "No hay tarea 1.2 Plan de Trabajo en la fase 01.",
@@ -215,14 +268,14 @@ SOLO_CALIDAD: dict[str, str] = {
 
 
 def resolver(tipo: str, ctx: Contexto) -> dict:
-    """{como_resolver, responsable_accion, impacto}; vacias (None) si el tipo esta pendiente."""
+    """{como_resolver, responsable_accion, impacto, prioridad}; vacias (None) si el tipo esta pendiente."""
     e = CATALOGO.get(tipo)
     if e is None:
-        return {"como_resolver": None, "responsable_accion": None, "impacto": None}
+        return {"como_resolver": None, "responsable_accion": None, "impacto": None, "prioridad": None}
     adm = administracion()
     return {"como_resolver": e.accion(ctx, adm),
             "responsable_accion": adm if e.responsable == ADMIN else e.responsable,
-            "impacto": e.impacto(ctx.tiene_linea_base)}
+            "impacto": e.impacto(ctx.tiene_linea_base, ctx), "prioridad": e.prioridad}
 
 
 # --- Acciones agrupadas (mensajes a los JP) -----------------------------------------------------
@@ -252,6 +305,8 @@ ACCION_GRUPAL: dict[str, Callable[[str, int, bool, str], str]] = {
         "trabajadas (en la subtarea, nunca en el padre) o corrige su Avance Real si aún no se ha trabajado."),
     "horas_sin_avance": lambda ts, n, lb, a: (
         f"En ClickUp, actualiza el Avance Real de estas {n} tareas, que tienen horas registradas y 0 % de avance: {ts}."),
+    "porcion_con_hh": lambda ts, n, lb, a: (
+        f"Mueve las HH Presupuestadas de estas {n} porciones a su paquete y déjalas solo con time estimate: {ts}."),
     "horas_en_tarea_padre": lambda ts, n, lb, a: (
         f"Registra las horas en las subtareas, no en la tarea padre, en estas {n} tareas: {ts}."),
     "no_aplica_con_hh": lambda ts, n, lb, a: (

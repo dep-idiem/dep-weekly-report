@@ -1,6 +1,7 @@
 """De objetos de dep_clickup a los insumos de metricas.py."""
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from typing import Iterable, Mapping
 
@@ -10,10 +11,21 @@ from .metricas import Horas, TareaMetrica
 
 CAMPO_HH = "HH Presupuestadas"
 CAMPO_AVANCE = "Avance Real"
+ADMINISTRACION = re.compile(r"^\s*0?0\s+administraci", re.I)
+
+
+def es_administracion(t: Task) -> bool:
+    """La fase "00 Administración": sus HH son el presupuesto contractual, no parte de la curva S."""
+    return not t.parent and bool(ADMINISTRACION.match(t.name or ""))
+
+
+def hh_de(t: Task) -> float:
+    v = t.cf(CAMPO_HH)
+    return float(v) if v not in (None, "") and float(v) > 0 else 0.0
 
 
 def a_tarea_metrica(t: Task) -> TareaMetrica:
-    hh = t.cf(CAMPO_HH)
+    hh = None if es_administracion(t) else t.cf(CAMPO_HH)       # presupuesto contractual: fuera del universo
     return TareaMetrica(
         id=t.id, nombre=t.name, parent=t.parent,
         start=t.start_date, due=t.due_date,

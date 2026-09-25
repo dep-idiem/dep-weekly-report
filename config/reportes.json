@@ -9,5 +9,6 @@
   "corte_historico": {
     "PJ-2025.0019": "2026-07-20"
   },
-  "minimo_horas_administracion": 20
+  "minimo_horas_administracion": 20,
+  "proyeccion": "uniforme"
 }

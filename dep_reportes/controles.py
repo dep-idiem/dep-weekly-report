@@ -38,6 +38,8 @@ class ProyectoControl:
     total_hh: float | None            # TotalHH calculado en esta corrida
     hh_prog_acum: float | None
     avance_prog: float | None
+    hh_incrementales_nuevas: float = 0.0          # filas incrementales agregadas en esta corrida
+    incrementales: tuple = ()                     # (fecha_captura, hh) de todas las filas incrementales vigentes
 
 
 def verificar(corte: dt.date, fechas_horas: Sequence[dt.date], proyectos: Sequence[ProyectoControl],
@@ -72,14 +74,19 @@ def verificar(corte: dt.date, fechas_horas: Sequence[dt.date], proyectos: Sequen
         if p.total_hh is None or p.hh_prog_acum is None or p.avance_prog is None:
             fallos.append(f"{p.codigo}: tiene línea base vigente (Rev. {p.rev_vigente}) pero quedó sin métricas")
         if p.lb_existente_hh is not None and p.total_hh is not None \
-                and abs(p.total_hh - p.lb_existente_hh) > u.tolerancia_total_hh:
+                and abs(p.total_hh - p.lb_existente_hh - p.hh_incrementales_nuevas) > u.tolerancia_total_hh:
             fallos.append(f"{p.codigo}: TotalHH {p.total_hh:g} distinto de la Rev. {p.rev_vigente} guardada "
-                          f"({p.lb_existente_hh:g}); la línea base es inmutable")
+                          f"({p.lb_existente_hh:g} + {p.hh_incrementales_nuevas:g} incrementales); la línea base es inmutable")
         previos = [m for m in metricas_previas if m.get("list_id") == p.list_id
                    and m.get("rev_linea_base") == p.rev_vigente and m.get("total_hh") is not None]
         if previos and p.total_hh is not None:
             ultimo = max(previos, key=lambda m: m["corte"])
-            if abs(ultimo["total_hh"] - p.total_hh) > u.tolerancia_total_hh:
+            # Filas incrementales capturadas despues de la ultima escritura de ese corte explican la diferencia.
+            escrito = [e["ejecutado_en"] for e in ejecuciones if e.get("corte") == ultimo["corte"]
+                       and e.get("modo") == "escritura" and e.get("resultado") == "ok" and e.get("ejecutado_en")]
+            t_pub = max(escrito) if escrito else None
+            incr = sum(h for fc, h in p.incrementales if t_pub is None or fc > t_pub) + p.hh_incrementales_nuevas
+            if abs(ultimo["total_hh"] - (p.total_hh - incr)) > u.tolerancia_total_hh:
                 fallos.append(f"{p.codigo}: TotalHH {p.total_hh:g} distinto del publicado para la misma Rev. "
                               f"{p.rev_vigente} en el corte {ultimo['corte']} ({ultimo['total_hh']:g})")
     return fallos

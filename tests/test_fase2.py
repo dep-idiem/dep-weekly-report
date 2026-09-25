@@ -225,9 +225,10 @@ def test_fusion_con_alcance_solo():
 
 def test_linea_base_solo_agrega():
     exist = [{"list_id": "L", "rev": 0, "task_id": "a"}]
-    out = A.fusionar("linea_base", exist, [{"list_id": "L", "rev": 0, "task_id": "b"},
+    out = A.fusionar("linea_base", exist, [{"list_id": "L", "rev": 0, "task_id": "a"},       # ya estaba: no se repite
+                                           {"list_id": "L", "rev": 0, "task_id": "b"},       # incremental de la Rev. 0
                                            {"list_id": "L", "rev": 1, "task_id": "a"}], D(2026, 9, 20))
-    assert out == exist + [{"list_id": "L", "rev": 1, "task_id": "a"}]
+    assert out == exist + [{"list_id": "L", "rev": 0, "task_id": "b"}, {"list_id": "L", "rev": 1, "task_id": "a"}]
 
 
 def test_encabezados_distintos_abortan():
@@ -242,7 +243,8 @@ def test_ida_y_vuelta_de_valores():
             "jp_nombre": "Ana", "jp_email": "ana@x.cl", "rev_linea_base": 0, "tiene_linea_base": True,
             "modo_calculo": "dep", **{c: 1.5 for c, _ in E.METRICAS}, "desviacion_pts": -1.1,
             "pct_presupuesto_usado": 0.4, "titular": "Avance real 73,2 % frente a 74,3 % programado: 1,1 puntos bajo el plan.",
-            "n_advertencias": 3}
+            "n_advertencias": 3, "hh_contrato": 3000.0, "pct_contrato_usado": 0.81, "ritmo_semanal": 40.0,
+            "semanas_restantes_al_ritmo": 14.5, "fecha_agotamiento_estimada": D(2027, 1, 12)}
     ti = E.tipos("metricas_semanales")
     valores = [E.columnas("metricas_semanales"), [A.celda_sheets(fila[c], ti[c]) for c in E.columnas("metricas_semanales")]]
     assert A.filas_desde_valores("metricas_semanales", valores) == [fila]

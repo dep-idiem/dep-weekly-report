@@ -42,6 +42,13 @@ ADV_FUERA_DE_PLAZO = "horas_fuera_de_plazo"
 ADV_FASE_OTRO_PROYECTO = "fase_de_otro_proyecto"
 ADV_TT_SIN_CLICKUP = "horas_timetracker_sin_clickup"
 ADV_LISTA_COMBINADA = "lista_combinada"
+# Fase 2b: porciones, presupuesto contractual y plan semanal
+ADV_PORCION_CON_HH = "porcion_con_hh"
+ADV_SIN_PRESUPUESTO = "sin_presupuesto_contractual"
+ADV_PRESUPUESTO_POR_AGOTARSE = "presupuesto_por_agotarse"
+ADV_CUMPLIMIENTO = "cumplimiento_semanal_fuera_de_rango"
+ADV_PAQUETE_DESAPARECIDO = "paquete_desaparecido"
+ADV_FASE_CON_HH = "fase_con_hh"
 
 # Advertencias de nivel proyecto: se escriben siempre en la hoja (decision 2 de la fase 2). Las demas solo
 # si son de una tarea con HH Presupuestadas; el detalle completo queda en calidad_datos.md.
@@ -49,7 +56,7 @@ NIVEL_PROYECTO = {
     ADV_SIN_JP, ADV_EN_PLANIFICACION, ADV_SIN_TAREA_12, ADV_TAREA_12_NO_APLICA, ADV_VARIAS_TAREAS_12,
     ADV_TERMINO_VENCIDO, ADV_SIN_TERMINO, ADV_HH_CAMBIARON, ADV_LB_SIN_HH, ADV_LB_TARDIA, ADV_CODIGO_DUPLICADO,
     ADV_NOMBRE_SIN_FORMATO, ADV_HORAS_ADMIN, ADV_FUERA_DE_PLAZO, ADV_FASE_OTRO_PROYECTO, ADV_TT_SIN_CLICKUP,
-    ADV_LISTA_COMBINADA,
+    ADV_LISTA_COMBINADA, ADV_SIN_PRESUPUESTO, ADV_PRESUPUESTO_POR_AGOTARSE, ADV_CUMPLIMIENTO, ADV_PAQUETE_DESAPARECIDO,
     "hh_en_padre_y_subtarea",   # doble conteo (calidad.DOBLE_CONTEO)
 }
 # De nivel tarea, pero se escriben aunque la tarea no tenga HH Presupuestadas.
@@ -136,7 +143,8 @@ class _Acum:
 def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica], horas: Sequence[Horas],
              control: dt.date, fin: dt.date | None, modo: Modo,
              fase_lb: Mapping[str, str] | None = None, hh_historicas: float = 0.0,
-             desde_historico: dt.date | None = None) -> ResultadoProyecto:
+             desde_historico: dt.date | None = None,
+             pendientes_plan: Mapping[str, Mapping[dt.date, float]] | None = None) -> ResultadoProyecto:
     """Metricas de un proyecto al corte `control`.
 
     lb: tareas de la linea base vigente (None = sin linea base: no hay programado).
@@ -146,6 +154,8 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
         en `desde_historico` (antes quedan vacias) y la proyeccion lo incluye, para que la curva termine en el valor
         de metricas_semanales. Las fases usan solo `horas`.
     desde_historico: fecha del corte historico (si es posterior al corte, la serie parte en el corte).
+    pendientes_plan: proyeccion por plan semanal (plan_semanal.py): paquete -> HH por dia de sus porciones futuras.
+        Esos paquetes usan ese reparto en vez del uniforme; los demas, el uniforme.
     """
     cal = modo.cal
     avisos: list[Aviso] = []
@@ -194,14 +204,26 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
     horas_ord = _Acum(_por_dia(horas))
     inclusivo = modo.base_en_control
     gastadas = horas_ord.hasta(control, inclusive=inclusivo)
-    if total is not None and abs(tot_act - total) > 1e-6:
-        avisos.append(Aviso(ADV_HH_CAMBIARON, "", f"HH actuales en ClickUp {tot_act:g} vs línea base {total:g}: "
-                                                  "¿corresponde una revisión?", {"actual": tot_act, "linea_base": total}))
+    if lb is not None:
+        # Paquete a paquete: solo si cambio la HH de uno ya congelado. Las tareas nuevas no la disparan
+        # (los paquetes nuevos se congelan como filas incrementales, linea_base.incrementales).
+        hh_act = {t.id: m._hh(t) for t in actuales}
+        cambiados = [t for t in lb_u if t.id in hh_act and t.id not in ids_na and abs(hh_act[t.id] - (t.hh or 0)) > 1e-6]
+        if cambiados:
+            a_, b_ = sum(hh_act[t.id] for t in cambiados), sum(t.hh or 0 for t in cambiados)
+            avisos.append(Aviso(ADV_HH_CAMBIARON, "", f"{len(cambiados)} paquete(s) congelado(s) con otra HH: {a_:g} en "
+                                                      f"ClickUp vs {b_:g} en la línea base ("
+                                                      + ", ".join(t.nombre for t in cambiados[:5]) + ")",
+                                {"n": len(cambiados), "actual": a_, "linea_base": b_}))
 
     # Proyeccion
     pend_diario: dict[dt.date, float] = defaultdict(float)
     for t in actual_u:
-        for d, v in pendientes_tarea(t, control, fin, modo).items():
+        if pendientes_plan and t.id in pendientes_plan:
+            reparto = {d: v for d, v in pendientes_plan[t.id].items() if d > control}
+        else:
+            reparto = pendientes_tarea(t, control, fin, modo)
+        for d, v in reparto.items():
             pend_diario[d] += v
     pend = _Acum(pend_diario)
     if modo.base_en_control:

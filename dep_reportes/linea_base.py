@@ -26,7 +26,8 @@ from .metricas import TareaMetrica
 from .proyecto import (ADV_SIN_TAREA_12, ADV_TAREA_12_NO_APLICA, ADV_VARIAS_TAREAS_12, NO_APLICA,
                        Aviso, es_no_aplica, fases_por_tarea)
 
-TIPOS = ("normal", "tardia", "importada_excel", "revision")
+# incremental: paquete creado despues de la revision vigente, congelado al aparecer con HH y fechas (misma rev).
+TIPOS = ("normal", "tardia", "importada_excel", "revision", "incremental")
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,34 @@ def congelar(lista: ListInfo, tareas: Sequence[Task], rev: int, tipo: str, motiv
     return [FilaLB(lista.id, rev, tipo, ahora, motivo, inicio, contractual, t.id, t.nombre, fases[t.id],
                    float(t.hh), t.start, t.due)
             for t in m.universo(tm) if not (excluir_no_aplica and es_no_aplica(t))]
+
+
+def incrementales(lista: ListInfo, tareas: Sequence[Task], paquetes: set[str], filas_vigentes: Sequence[FilaLB],
+                   ahora: dt.datetime, excluir_no_aplica: bool = True) -> list[FilaLB]:
+    """Paquetes creados despues de la captura de la revision vigente que aun no estan en ella, con HH y fechas.
+    Se agregan como filas `incremental` de la misma revision: la curva programada crece y la revision no cambia."""
+    if not filas_vigentes:
+        return []
+    base = [f for f in filas_vigentes if f.tipo != "incremental"] or list(filas_vigentes)
+    captura, rev = min(f.fecha_captura for f in base), base[0].rev
+    en_lb = {f.task_id for f in filas_vigentes}
+    tm = {t.id: t for t in a_tareas_metrica(tareas)}
+    fases = fases_por_tarea(list(tm.values()))
+    out = []
+    for t in tareas:
+        x = tm[t.id]
+        if (t.id in paquetes and t.id not in en_lb and x.hh and x.hh > 0 and x.start and x.due
+                and t.date_created and t.date_created > captura and not (excluir_no_aplica and es_no_aplica(x))):
+            out.append(FilaLB(lista.id, rev, "incremental", ahora, f"Paquete nuevo después de la Rev. {rev} "
+                              f"(creado el {t.date_created:%Y-%m-%d})", base[0].fecha_inicio,
+                              base[0].fecha_entrega_contractual, t.id, t.name, fases[t.id], float(x.hh), x.start, x.due))
+    return out
+
+
+def desaparecidos(filas_vigentes: Sequence[FilaLB], tareas: Sequence[Task]) -> list[FilaLB]:
+    """Filas de la linea base vigente cuya tarea ya no esta en la lista (borrada o movida). No se borran."""
+    ids = {t.id for t in tareas}
+    return [f for f in filas_vigentes if f.task_id not in ids]
 
 
 def importar_excel(lista: ListInfo, tareas: Sequence[Task], ruta, contractual: dt.date, ahora: dt.datetime,

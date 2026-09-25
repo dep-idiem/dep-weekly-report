@@ -230,6 +230,7 @@ def parse_task(t: dict, list_id: str = "") -> Task:
         date_updated=ms_to_local(t.get("date_updated")),
         url=t.get("url", ""),
         status_type=((t.get("status") or {}).get("type") or ""),
+        date_created=ms_to_local(t.get("date_created")),
     )
 
 

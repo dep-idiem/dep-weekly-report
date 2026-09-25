@@ -18,7 +18,7 @@ import logging
 import sys
 import time
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Sequence
 
@@ -29,11 +29,13 @@ from dep_clickup.naming import list_code
 
 from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, presentacion as PR, proyecto as P
 from . import horas as H, personas as PERS, resolucion as RES
+from . import estructura as EST, metricas as MT, plan_semanal as PS, presupuesto as PRES
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
 from .config_reportes import (DRY_RUN_DIR, FOLDER_PJ_INGENIERIA, IMPORTADAS, RESPALDOS_DIR,
                               RETENCION_PRELIMINAR_DIAS, SHEETS_REPORTES_ID, TIME_ENTRIES_DESDE, TIMETRACKER_LIST_ID,
-                              UMBRAL_HORAS_ADMINISTRACION, MINIMO_HORAS_ADMINISTRACION, cortes_historicos)
+                              UMBRAL_HORAS_ADMINISTRACION, MINIMO_HORAS_ADMINISTRACION, PROYECCION,
+                              cortes_historicos, presupuestos)
 from .metricas import Horas, TareaMetrica
 from .modos import Modo, por_nombre
 
@@ -92,6 +94,11 @@ class ResultadoLista:
     resultado: P.ResultadoProyecto
     advertencias: list[dict]           # las que van a la hoja
     advertencias_todas: list[dict]     # incluye las del detector sobre tareas sin HH
+    clases: dict = field(default_factory=dict)          # task_id -> estructura.Clase
+    origen_avance: dict = field(default_factory=dict)   # paquete -> manual / porciones / sin_dato
+    presupuesto: dict = field(default_factory=dict)     # columnas de presupuesto de metricas_semanales
+    plan_semanal: list = field(default_factory=list)    # filas por semana (solo agregado por proyecto)
+    extra: dict = field(default_factory=dict)           # datos para el informe del dry-run
 
 
 @dataclass
@@ -124,9 +131,16 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                    modo: Modo, lb_exist: list[LB.FilaLB], observada_antes: bool, primera_corrida: bool,
                    ahora: dt.datetime, codigo: str | None = None,
                    comparten_codigo: Sequence[ListInfo] = (), conteo: Conteo = Conteo(),
-                   umbral_admin: float = UMBRAL_HORAS_ADMINISTRACION) -> ResultadoLista:
+                   umbral_admin: float = UMBRAL_HORAS_ADMINISTRACION, presupuesto_manual: float | None = None,
+                   proyeccion: str = PROYECCION) -> ResultadoLista:
     codigo = codigo or list_code(lista.name) or lista.id
-    tm = a_tareas_metrica(tareas)
+    tm_manual = a_tareas_metrica(tareas)
+    # Capa de porciones (estructura.py): avance del paquete desde sus porciones cuando no hay avance manual.
+    clases = EST.clasificar(tareas)
+    av = EST.avance_efectivo(tareas, clases)
+    tm = [replace(t, avance=av[t.id][0]) if av.get(t.id, (None, ""))[1] == EST.PORCIONES else t for t in tm_manual]
+    paquetes = {tid for tid, c in clases.items() if c.tipo == EST.PAQUETE}
+    con_porciones = EST.porciones_de(clases)
     horas = a_horas(entradas_lista)
     jp = buscar_jp(lista, miembros)
     avisos: list[P.Aviso] = []
@@ -161,6 +175,15 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                                                    "Presupuestadas: se reintenta en el próximo corte"))
     vig = LB.vigente(lb_exist, lista.id)
     lb_filas = vig[1] if vig else nuevas
+    if vig:
+        # Paquetes creados despues de la revision vigente: se congelan al aparecer (filas incrementales).
+        inc = LB.incrementales(lista, tareas, paquetes, lb_filas, ahora, excluir_no_aplica=modo.excluir_no_aplica)
+        lb_filas, nuevas = list(lb_filas) + inc, list(nuevas) + inc
+        desap = LB.desaparecidos(lb_filas, tareas)
+        if desap:
+            avisos.append(P.Aviso(P.ADV_PAQUETE_DESAPARECIDO, "", f"{len(desap)} tarea(s) de la línea base ya no están "
+                                                                  "en la lista: " + ", ".join(f.task_nombre for f in desap[:5]),
+                                  {"n": len(desap), "nombres": [f.task_nombre for f in desap], "hh": sum(f.hh for f in desap)}))
     if lb_filas and lb_filas[0].rev == 0 and lb_filas[0].tipo == "tardia":
         # Estable entre corridas del mismo corte: depende solo de la linea base guardada.
         avisos.append(P.Aviso(P.ADV_LB_TARDIA, "", f"Rev. 0 tardía: congelada el {lb_filas[0].fecha_captura:%Y-%m-%d} "
@@ -171,12 +194,38 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     lb_tareas, fase_lb = LB.a_tareas(lb_filas) if lb_filas else (None, {})
 
     fin = lista.due.date() if lista.due else None
-    res = P.calcular(lb_tareas, tm, horas, corte, fin, modo, fase_lb, hh_historicas=conteo.hh_historicas,
-                     desde_historico=conteo.corte_historico)
+    plan = EST.plan_porciones(tareas, clases)
+    pend_plan = PS.pendientes_por_paquete(plan, corte, modo.cal)
+    comun = dict(hh_historicas=conteo.hh_historicas, desde_historico=conteo.corte_historico)
+    res = P.calcular(lb_tareas, tm, horas, corte, fin, modo, fase_lb, **comun,
+                     pendientes_plan=pend_plan if proyeccion == "plan_semanal" else None)
     avisos += res.avisos
+    # Para el informe: la otra proyeccion y el avance solo con valores manuales.
+    alt = P.calcular(lb_tareas, tm, horas, corte, fin, modo, fase_lb, **comun,
+                     pendientes_plan=None if proyeccion == "plan_semanal" else pend_plan) if pend_plan else res
+    extra = {"hh_estimadas_uniforme": (alt if proyeccion == "plan_semanal" else res).metricas["hh_estimadas_al_termino"],
+             "hh_estimadas_plan_semanal": (res if proyeccion == "plan_semanal" else alt).metricas["hh_estimadas_al_termino"],
+             "avance_real_manual": MT.avance_real(tm_manual) if MT.total_hh(tm_manual) else None,
+             "origen_avance": dict(Counter(o for _, o in av.values()))}
     # Reglas de conteo de horas (solo horas nativas hasta el corte)
     al_corte = [h for h in horas if h.fecha <= corte]
-    avisos += H.horas_en_padres(tm, al_corte)
+    for a in H.horas_en_padres(tm, al_corte):
+        if a.task_id in con_porciones:          # paquete con porciones: solo se pierde el detalle semanal
+            a.datos["paquete_con_porciones"] = True
+        avisos.append(a)
+    for tid, c in clases.items():
+        if c.es_fase:
+            t = next(x for x in tm if x.id == tid)
+            avisos.append(P.Aviso(P.ADV_FASE_CON_HH, tid, f"Fase \"{t.nombre}\" con HH={t.hh:g}", {"hh": t.hh}))
+        if c.porcion_con_hh:
+            t = next(x for x in tm if x.id == tid)
+            avisos.append(P.Aviso(P.ADV_PORCION_CON_HH, tid, f"\"{t.nombre}\" tiene forma de porción y HH={t.hh:g}",
+                                  {"hh": t.hh}))
+    # Presupuesto contractual y plan semanal
+    pres = PRES.metricas(PRES.hh_contrato(tareas, presupuesto_manual), res.metricas["hh_gastadas_acum"], al_corte, corte)
+    avisos += PRES.avisos(pres)
+    filas_ps = PS.filas(plan, al_corte, corte)
+    avisos += PS.aviso_cumplimiento(filas_ps, corte)
     avisos += H.horas_en_administracion(tm, al_corte, umbral_admin, MINIMO_HORAS_ADMINISTRACION)
     avisos += H.horas_fuera_de_plazo(al_corte, LB.inicio_proyecto(lista, tareas), fin)
     avisos += H.fases_de_otro_proyecto(tm, lista.name)
@@ -185,7 +234,11 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
 
     padres = {t.id: t.parent for t in tm}
     hpt = horas_por_tarea([h for h in horas if h.fecha <= corte], padres, acumular_en_ancestros=True)
-    detector = calidad.detectar(tm, hpt, {t.id: t.time_estimate_h for t in tareas})
+    # El detector evalua lo que cargo el JP (avance manual), no el avance calculado desde porciones.
+    detector = calidad.detectar(tm_manual, hpt, {t.id: t.time_estimate_h for t in tareas})
+    # "Tarea padre con HH y subtareas sin HH" no aplica si todas las subtareas son porciones: es la estructura normal.
+    normales = EST.solo_porciones_debajo(tareas, clases)
+    detector = [a for a in detector if not (a.tipo == calidad.HH_EN_PADRE and a.tarea_id in normales)]
     nombres = {f.task_id: f.task_nombre for f in lb_filas} | {t.id: t.nombre for t in tm}
     etiqueta, tiene_lb = PR.etiqueta_proyecto(codigo, nombre_corto), bool(lb_filas)
     adv = [fila_advertencia(corte, lista.id, a.tipo, a.task_id or "", a.detalle,
@@ -194,7 +247,8 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                              RES.Contexto(a.tarea, etiqueta, tiene_lb, a.datos)) for a in detector]
     con_hh = {t.id for t in tm if t.hh} | {f.task_id for f in lb_filas}
     return ResultadoLista(lista, codigo, jp, tareas, tm, horas, dec, lb_filas, nuevas, res,
-                          P.para_hoja(adv, con_hh), adv)
+                          P.para_hoja(adv, con_hh), adv, clases, {k: o for k, (_, o) in av.items()}, pres, filas_ps,
+                          extra)
 
 
 def fila_advertencia(corte: dt.date, list_id: str, tipo: str, task_id: str, detalle: str, ctx: RES.Contexto) -> dict:
@@ -226,7 +280,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
     })
     tc = {"corte": corte, "tipo_corte": tipo_corte}
     semanal = {**tc, "list_id": lid, **idn, "rev_linea_base": rev, "modo_calculo": modo.nombre,
-               **{c: mt.get(c) for c, _ in E.METRICAS}, "n_advertencias": len(r.advertencias)}
+               **{c: mt.get(c) for c, _ in E.METRICAS}, "n_advertencias": len(r.advertencias), **r.presupuesto}
     motivo = None if r.lb_filas else PR.motivo_sin_linea_base(a["tipo"] for a in r.advertencias_todas)
     out["metricas_semanales"].append(semanal | PR.derivadas_semanales(semanal, motivo))
     out["metricas_fase"] += [{**tc, "list_id": lid, **idn, **f} for f in r.resultado.fases]
@@ -239,7 +293,12 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
     out["fotos_tareas"] += [] if not fotos else [{"corte": corte, "list_id": lid, "task_id": t.id, "parent_id": t.parent or "",
                              "task_nombre": t.nombre, "fase": fases[t.id], "estado": t.estado or "", "hh": t.hh,
                              "start": t.start, "due": t.due, "avance_real": t.avance,
-                             "hh_gastadas_acum": round(propias.get(t.id, 0.0), 6)} for t in r.tm]
+                             "hh_gastadas_acum": round(propias.get(t.id, 0.0), 6),
+                             "tipo_tarea": r.clases[t.id].tipo if t.id in r.clases else None,
+                             "origen_avance": r.origen_avance.get(t.id)} for t in r.tm]
+    if any(f["hh_planificadas"] or f["hh_registradas"] for f in r.plan_semanal):
+        out["plan_semanal"] += [{**tc, "list_id": lid, **{k: idn[k] for k in ("codigo", "proyecto", "jp_nombre", "jp_email")},
+                                 **f} for f in r.plan_semanal]
     out["serie_diaria"] += [{**tc, "list_id": lid, **idn, "fecha": p.fecha,
                              "hh_prog_acum": p.programadas if r.lb_filas else None,
                              "hh_gastadas_acum": p.gastadas, "hh_proyectadas_acum": p.proyectadas,
@@ -303,6 +362,7 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
     # Un codigo del Timetracker se asigna solo si una unica lista del folder tiene ese codigo base.
     bases = Counter(H.codigo_sin_prefijo(list_code(l.name) or "") for l in cu_listas_todas)
     manuales = cortes_historicos()
+    presupuestos_manuales = presupuestos()
     for lista in sorted(listas, key=lambda l: l.name):
         base = H.codigo_sin_prefijo(list_code(lista.name) or "")
         regs = tt_por_codigo.get(base, []) if base and bases[base] == 1 else []
@@ -317,7 +377,8 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
         tareas = cu.list_tasks(lista.id)
         corrida.listas.append(procesar_lista(lista, tareas, contadas, miembros, corte, modo,
                                              lb_exist, lista.id in observadas, corrida.primera_corrida, ahora,
-                                             asig.codigos[lista.id], comparten.get(lista.id, ()), conteo))
+                                             asig.codigos[lista.id], comparten.get(lista.id, ()), conteo,
+                                             presupuesto_manual=presupuestos_manuales.get(asig.codigos[lista.id])))
     corrida.segundos_clickup = time.monotonic() - t0
     corrida.peticiones_clickup = dict(cu.request_log)
 
@@ -325,12 +386,14 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
     for r in corrida.listas:
         for t, filas in filas_de(r, corte, modo, ahora, tipo_corte).items():
             nuevas[t] += filas
-    n_lb = len({(f["list_id"], f["rev"]) for f in nuevas["linea_base"]})
+    n_lb = len({(f["list_id"], f["rev"]) for f in nuevas["linea_base"] if f["tipo"] != "incremental"})
+    n_inc = sum(1 for f in nuevas["linea_base"] if f["tipo"] == "incremental")
     nuevas["ejecuciones"] = [{"ejecutado_en": ahora, "corte": corte, "tipo_corte": tipo_corte,
                               "modo": "dry_run" if dry_run else "escritura",
                               "n_proyectos": len(corrida.listas), "n_lineas_base_nuevas": n_lb,
                               "resultado": "ok", "detalle_error": "", **dep.conteos(),
-                              "n_nativas_previas_excluidas": sum(c.n_nativas_previas for c in corrida.conteos.values())}]
+                              "n_nativas_previas_excluidas": sum(c.n_nativas_previas for c in corrida.conteos.values()),
+                              "n_lb_incrementales": n_inc}]
     alcance = {l.id for l in listas} if solo else None
     corrida.nuevas = nuevas
     corrida.lb_nuevas = [f for f in fusionar("linea_base", existentes.get("linea_base", []), nuevas["linea_base"], corte)
@@ -394,9 +457,11 @@ def dir_dry_run(corte: dt.date, tipo_corte: str) -> Path:
 def _control(r: ResultadoLista, lb_exist: list[LB.FilaLB]) -> CTL.ProyectoControl:
     vig = LB.vigente(lb_exist, r.lista.id)
     m = r.resultado.metricas
+    inc_nuevas = sum(f.hh for f in r.lb_nuevas if f.tipo == "incremental") if vig else 0.0
     return CTL.ProyectoControl(
         r.lista.id, r.codigo, r.lb_filas[0].rev if r.lb_filas else None,
-        sum(f.hh for f in vig[1]) if vig else None, m["total_hh"], m["hh_prog_acum"], m["avance_prog"])
+        sum(f.hh for f in vig[1]) if vig else None, m["total_hh"], m["hh_prog_acum"], m["avance_prog"],
+        inc_nuevas, tuple((f.fecha_captura, f.hh) for f in vig[1] if f.tipo == "incremental") if vig else ())
 
 
 def _respaldar(existentes: dict[str, list[dict]], crudas: dict[str, list[list]], sheets: AlmacenSheets,
@@ -440,6 +505,16 @@ def _escribir_resumen(c: Corrida, ruta) -> None:
         "plan_sheets": c.plan_sheets, "segundos_clickup": round(c.segundos_clickup, 1),
         "filas": {t: len(f) for t, f in c.nuevas.items()},
         "depuracion_horas": c.depuracion.conteos() if c.depuracion else None,
+        "capa_porciones": {r.codigo: {
+            "tipos": dict(Counter(x.tipo for x in r.clases.values())),
+            "origen_avance": r.extra.get("origen_avance"),
+            "avance_real_manual": r.extra.get("avance_real_manual"),
+            "avance_real_efectivo": r.resultado.metricas.get("avance_real"),
+            "hh_estimadas_uniforme": r.extra.get("hh_estimadas_uniforme"),
+            "hh_estimadas_plan_semanal": r.extra.get("hh_estimadas_plan_semanal"),
+            "lb_incrementales": [f.task_nombre for f in r.lb_nuevas if f.tipo == "incremental"],
+            "cumplimiento_8_semanas": PS.por_agregar({"x": r.plan_semanal})["x"],
+            "presupuesto": r.presupuesto} for r in c.listas},
         "saldo_historico": {r.codigo: {"corte_historico": str(c.conteos[r.lista.id].corte_historico),
                                        "hh_historicas": round(c.conteos[r.lista.id].hh_historicas, 2),
                                        "tt_sin_clickup": round(c.conteos[r.lista.id].tt_sin_clickup, 2),

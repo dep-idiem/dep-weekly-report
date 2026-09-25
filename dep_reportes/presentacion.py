@@ -90,9 +90,22 @@ def motivo_sin_linea_base(tipos_advertencia) -> str:
     return next((txt for t, txt in MOTIVOS_SIN_LB if t in tipos), MOTIVO_GENERICO)
 
 
+def miles(x: float) -> str:
+    return f"{x:,.0f}".replace(",", ".")
+
+
 def titular(tiene_linea_base: bool, avance_real: float | None, avance_prog: float | None,
-            motivo: str | None = None) -> str:
+            motivo: str | None = None, presupuesto: Mapping | None = None) -> str:
     if not tiene_linea_base:
+        p = presupuesto or {}
+        if p.get("hh_contrato") and p.get("pct_contrato_usado") is not None:
+            txt = (f"Sin curva programada. Consumidas {miles(p['pct_contrato_usado'] * p['hh_contrato'])} de "
+                   f"{miles(p['hh_contrato'])} HH contratadas ({num(p['pct_contrato_usado'] * 100, 0)} %)")
+            if p["pct_contrato_usado"] >= 1:
+                return txt + ": presupuesto superado."
+            if p.get("fecha_agotamiento_estimada"):
+                return txt + f"; al ritmo actual se agotan el {fecha(p['fecha_agotamiento_estimada'])}."
+            return txt + "."
         return f"Sin curva programada: {motivo or MOTIVO_GENERICO}."
     if avance_prog is None:
         return "Línea base sin avance programado calculable."
@@ -112,7 +125,7 @@ def derivadas_semanales(fila: Mapping, motivo: str | None = None) -> dict:
         "tiene_linea_base": tiene,
         "desviacion_pts": desviacion_pts(fila.get("avance_real"), fila.get("avance_prog")) if tiene else None,
         "pct_presupuesto_usado": pct_presupuesto_usado(fila.get("hh_gastadas_acum"), fila.get("total_hh")) if tiene else None,
-        "titular": titular(tiene, fila.get("avance_real"), fila.get("avance_prog"), motivo),
+        "titular": titular(tiene, fila.get("avance_real"), fila.get("avance_prog"), motivo, fila),
     }
 
 
@@ -157,8 +170,9 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
         return f"{t} está en No Aplica pero tiene {cuanto}: quitarlas o cambiar el estado"
     if tipo == "hh_cambiaron_vs_linea_base":
         if "actual" in d and "linea_base" in d:
-            return (f"Las HH presupuestadas cambiaron: {hh(d['actual'])} en ClickUp frente a {hh(d['linea_base'])} "
-                    "en la línea base; evaluar una revisión")
+            cuales = f"de {d['n']} paquete(s) congelado(s) " if d.get("n") else ""
+            return (f"Las HH presupuestadas {cuales}cambiaron: {hh(d['actual'])} en ClickUp frente a "
+                    f"{hh(d['linea_base'])} en la línea base; evaluar una revisión")
         return "Las HH presupuestadas en ClickUp ya no coinciden con la línea base: evaluar una revisión"
     if tipo == "tarea_de_linea_base_ahora_no_aplica":
         return f"{t} está en la línea base pero hoy está en No Aplica: evaluar una revisión de la línea base"
@@ -217,6 +231,34 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
     if tipo == "fase_de_otro_proyecto":
         cod = f" ({d['codigo_fase']})" if d.get("codigo_fase") else ""
         return f"La fase {t if tarea else 'indicada'} lleva el código de otro proyecto{cod}"
+    if tipo == "fase_con_hh":
+        cuanto = f"{hh(d['hh'])} HH Presupuestadas" if "hh" in d else "HH Presupuestadas"
+        return f"La fase {t if tarea else 'indicada'} tiene {cuanto}; deberían estar en un paquete con fechas"
+    if tipo == "porcion_con_hh":
+        cuanto = f"{hh(d['hh'])} HH Presupuestadas" if "hh" in d else "HH Presupuestadas"
+        return f"{t} tiene forma de porción semanal pero lleva {cuanto}"
+    if tipo == "sin_presupuesto_contractual":
+        return "El proyecto no tiene presupuesto contractual cargado (HH Presupuestadas en 00 Administración)"
+    if tipo == "presupuesto_por_agotarse":
+        if d.get("superado"):
+            return f"Presupuesto contractual superado: {num((d.get('pct') or 0) * 100, 0)} % usado"
+        if d.get("semanas") is not None:
+            cuando = f" (hacia el {fecha(d['fecha'])})" if d.get("fecha") else ""
+            return (f"El presupuesto contractual se agota en {num(d['semanas'])} semanas al ritmo actual{cuando}; "
+                    f"usado {num((d.get('pct') or 0) * 100, 0)} %")
+        return "El presupuesto contractual está por agotarse"
+    if tipo == "cumplimiento_semanal_fuera_de_rango":
+        if "n" in d:
+            sentido = ("bajo el 50 %" if d.get("bajo") == d["n"] else "sobre el 150 %" if not d.get("bajo")
+                       else "fuera del rango 50-150 %")
+            return (f"En {d['n']} de las últimas {d.get('ventana', 4)} semanas las horas registradas quedaron {sentido} "
+                    "de lo planificado en las porciones")
+        return "Las horas registradas se alejan de lo planificado en las porciones varias semanas seguidas"
+    if tipo == "paquete_desaparecido":
+        if d.get("nombres"):
+            return (f"{d.get('n', len(d['nombres']))} paquete(s) de la línea base ya no están en la lista: "
+                    + ", ".join(f"«{x}»" for x in d["nombres"][:3]) + (" …" if len(d["nombres"]) > 3 else ""))
+        return "Hay paquetes de la línea base que ya no están en la lista"
     if tipo == "lista_combinada":
         cods = f" ({', '.join(d['codigos'])})" if d.get("codigos") else ""
         return f"Lista combinada con fases de más de un proyecto{cods}"

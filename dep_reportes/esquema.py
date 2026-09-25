@@ -36,31 +36,40 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
     "metricas_semanales": [("corte", FECHA)] + CORTE + [("list_id", TEXTO)] + IDENT
                           + [("rev_linea_base", ENTERO), ("tiene_linea_base", BOOLEANO), ("modo_calculo", TEXTO)] + METRICAS
                           + [("desviacion_pts", NUMERO), ("pct_presupuesto_usado", NUMERO), ("titular", TEXTO),
-                             ("n_advertencias", ENTERO)],
+                             ("n_advertencias", ENTERO)]
+                          # Presupuesto contractual (presupuesto.py)
+                          + [("hh_contrato", NUMERO), ("pct_contrato_usado", NUMERO), ("ritmo_semanal", NUMERO),
+                             ("semanas_restantes_al_ritmo", NUMERO), ("fecha_agotamiento_estimada", FECHA)],
     "metricas_fase": [("corte", FECHA)] + CORTE + [("list_id", TEXTO)] + IDENT
                      + [("fase", TEXTO), ("hh_linea_base", NUMERO), ("hh_prog_acum", NUMERO),
                         ("hh_gastadas_acum", NUMERO), ("avance_real", NUMERO)],
     "fotos_tareas": [("corte", FECHA), ("list_id", TEXTO), ("task_id", TEXTO), ("parent_id", TEXTO),
                      ("task_nombre", TEXTO), ("fase", TEXTO), ("estado", TEXTO), ("hh", NUMERO), ("start", FECHA),
-                     ("due", FECHA), ("avance_real", NUMERO), ("hh_gastadas_acum", NUMERO)],
+                     ("due", FECHA), ("avance_real", NUMERO), ("hh_gastadas_acum", NUMERO),
+                     ("tipo_tarea", TEXTO), ("origen_avance", TEXTO)],
     "serie_diaria": [("corte", FECHA), ("tipo_corte", TEXTO), ("list_id", TEXTO)] + IDENT
                     + [("fecha", FECHA), ("hh_prog_acum", NUMERO),
                                                     ("hh_gastadas_acum", NUMERO), ("hh_proyectadas_acum", NUMERO),
                                                     ("hh_linea_base", NUMERO)],
     "advertencias": [("corte", FECHA)] + CORTE + [("list_id", TEXTO)] + IDENT
                     + [("tipo", TEXTO), ("nivel", TEXTO), ("task_id", TEXTO), ("detalle", TEXTO), ("mensaje", TEXTO),
-                       ("como_resolver", TEXTO), ("responsable_accion", TEXTO), ("impacto", TEXTO)],
+                       ("como_resolver", TEXTO), ("responsable_accion", TEXTO), ("impacto", TEXTO),
+                       ("prioridad", TEXTO)],
+    # Cumplimiento del plan semanal (plan_semanal.py): solo por proyecto y semana, nunca por persona.
+    "plan_semanal": [("corte", FECHA), ("tipo_corte", TEXTO), ("list_id", TEXTO), ("codigo", TEXTO), ("proyecto", TEXTO),
+                     ("jp_nombre", TEXTO), ("jp_email", TEXTO), ("semana", FECHA), ("hh_planificadas", NUMERO),
+                     ("hh_registradas", NUMERO), ("cumplimiento", NUMERO), ("es_ultimo_corte", BOOLEANO)],
     "ejecuciones": [("ejecutado_en", FECHA_HORA), ("corte", FECHA), ("tipo_corte", TEXTO), ("modo", TEXTO),
                     ("n_proyectos", ENTERO),
                     ("n_lineas_base_nuevas", ENTERO), ("resultado", TEXTO), ("detalle_error", TEXTO),
                     ("n_importadas_excluidas", ENTERO), ("n_duplicadas_excluidas", ENTERO),
                     ("n_duracion_no_positiva_excluidas", ENTERO), ("n_futuras_excluidas", ENTERO),
-                    ("n_nativas_previas_excluidas", ENTERO)],
+                    ("n_nativas_previas_excluidas", ENTERO), ("n_lb_incrementales", ENTERO)],
 }
 
 # Politica de escritura por tabla
 REEMPLAZO_TOTAL = {"proyectos", "serie_diaria"}          # se reemplaza (en el alcance de la corrida)
-POR_CORTE = {"metricas_semanales", "metricas_fase", "advertencias"}  # oficial: su corte; ambas: todas las preliminares
+POR_CORTE = {"metricas_semanales", "metricas_fase", "advertencias", "plan_semanal"}  # oficial: su corte; ambas: todas las preliminares
 SOLO_OFICIAL = {"fotos_tareas"}                           # solo corridas oficiales; se reemplaza el corte
 SOLO_AGREGAR = {"linea_base", "ejecuciones"}
 CON_ULTIMO_CORTE = {t for t, cols in TABLAS.items() if any(c == "es_ultimo_corte" for c, _ in cols)}
@@ -78,6 +87,7 @@ CLAVES = {
     "serie_diaria": ("list_id", "fecha"),
     "advertencias": ("corte", "tipo_corte", "list_id", "tipo", "task_id", "detalle"),
     "ejecuciones": ("ejecutado_en",),
+    "plan_semanal": ("corte", "tipo_corte", "list_id", "semana"),
 }
 
 
