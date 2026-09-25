@@ -196,4 +196,33 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
     if tipo == "horas_sin_avance":
         h = f"{num(d['horas'], 2)} h registradas" if "horas" in d else "horas registradas"
         return f"{t} tiene {h} pero 0 % de avance"
+    if tipo == "horas_en_tarea_padre":
+        cuanto = f"{num(d['horas'])} h registradas" if "horas" in d else "horas registradas"
+        return f"{t} tiene {cuanto} en la tarea padre, no en sus subtareas"
+    if tipo == "horas_en_administracion":
+        if "fraccion" in d and "horas" in d:
+            umbral = f", sobre el umbral de {num(d['umbral'] * 100, 0)} %" if "umbral" in d else ""
+            return (f"El {num(d['fraccion'] * 100, 0)} % de las horas del proyecto ({num(d['horas'])} h) está en "
+                    f"00 Administración{umbral}")
+        return "Demasiadas horas del proyecto están en 00 Administración"
+    if tipo == "horas_fuera_de_plazo":
+        partes = []
+        if d.get("n_antes"):
+            partes.append(f"{d['n_antes']} entradas ({num(d['h_antes'])} h) antes del inicio del proyecto"
+                          + (f" ({fecha(d['inicio'])})" if d.get("inicio") else ""))
+        if d.get("n_despues"):
+            partes.append(f"{d['n_despues']} entradas ({num(d['h_despues'])} h) después de su término"
+                          + (f" ({fecha(d['fin'])})" if d.get("fin") else ""))
+        return ("Hay " + " y ".join(partes)) if partes else "Hay horas registradas fuera del plazo del proyecto"
+    if tipo == "fase_de_otro_proyecto":
+        cod = f" ({d['codigo_fase']})" if d.get("codigo_fase") else ""
+        return f"La fase {t if tarea else 'indicada'} lleva el código de otro proyecto{cod}"
+    if tipo == "lista_combinada":
+        cods = f" ({', '.join(d['codigos'])})" if d.get("codigos") else ""
+        return f"Lista combinada con fases de más de un proyecto{cods}"
+    if tipo == "horas_timetracker_sin_clickup":
+        if "horas" in d:
+            desde = f" desde el {fecha(d['desde'])}" if d.get("desde") else ""
+            return f"El Timetracker tiene {num(d['horas'])} h de este proyecto{desde} que no están registradas en ClickUp"
+        return "El Timetracker tiene horas de este proyecto que no están registradas en ClickUp"
     return "Advertencia sin descripción"

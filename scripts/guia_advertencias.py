@@ -39,6 +39,8 @@ def generar() -> str:
         quien = adm if e.responsable == RES.ADMIN else e.responsable
         filas.append(f"| `{tipo}` | {_celda(e.significado)} | {_celda(accion)} | {quien} | {_impacto(e)} |")
     pend = [f"| `{t}` | {_celda(s)} | *Pendiente de definir* | — | — |" for t, s in RES.PENDIENTES.items()]
+    pend += [f"| `{t}` | {_celda(s)} | *No va a la hoja: solo en calidad_datos.md* | — | — |"
+             for t, s in RES.SOLO_CALIDAD.items()]
     return "\n".join([
         "# Guía de advertencias del reporte semanal DEP",
         "",

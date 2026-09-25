@@ -168,6 +168,13 @@ class ClickUpClient:
     def list_time_entries(self, start: dt.date, end: dt.date, list_id: str | None = None,
                           assignees: Iterable[int] | None = None, team_id: str | None = None,
                           folder_id: str | None = None, space_id: str | None = None) -> list[TimeEntry]:
+        """Como list_time_entries_raw, ya convertidas (sin cronometros corriendo)."""
+        raw = self.list_time_entries_raw(start, end, list_id, assignees, team_id, folder_id, space_id)
+        return [e for e in (parse_time_entry(x) for x in raw) if e is not None]
+
+    def list_time_entries_raw(self, start: dt.date, end: dt.date, list_id: str | None = None,
+                              assignees: Iterable[int] | None = None, team_id: str | None = None,
+                              folder_id: str | None = None, space_id: str | None = None) -> list[dict]:
         """Entradas con start entre start y end (fechas locales de Santiago, ambos incluidos).
 
         Sin `assignee` el endpoint devuelve solo las del dueño del token; por eso, si no se pasan
@@ -188,8 +195,7 @@ class ClickUpClient:
         for k, v in (("list_id", list_id), ("folder_id", folder_id), ("space_id", space_id)):
             if v:
                 params[k] = v
-        data = self.get(f"/team/{team_id}/time_entries", params)
-        return [e for e in (parse_time_entry(x) for x in data.get("data", [])) if e is not None]
+        return self.get(f"/team/{team_id}/time_entries", params).get("data", [])
 
 
 def parse_list(l: dict, folder_id: str | None = None, archived: bool = False) -> ListInfo:
@@ -247,4 +253,5 @@ def parse_time_entry(e: dict) -> TimeEntry | None:
         duration_ms=dur,
         description=e.get("description") or "",
         updated=ms_to_local(e.get("at")),
+        source=e.get("source") or "",
     )

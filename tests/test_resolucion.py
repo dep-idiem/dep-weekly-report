@@ -16,14 +16,15 @@ LARGO = "Tarea con un nombre bastante largo para probar el recorte del texto en 
 @pytest.mark.parametrize("tipo", TODOS_LOS_TIPOS)
 def test_todo_tipo_tiene_solucion_o_esta_pendiente(tipo):
     """Falla si aparece un tipo nuevo sin solucion: agregarlo a resolucion.CATALOGO."""
-    assert (tipo in RES.CATALOGO) != (tipo in RES.PENDIENTES), f"{tipo}: definir en resolucion.CATALOGO"
+    en = [tipo in RES.CATALOGO, tipo in RES.PENDIENTES, tipo in RES.SOLO_CALIDAD]
+    assert sum(en) == 1, f"{tipo}: definir en resolucion.CATALOGO"
 
 
 def test_pendientes_son_solo_los_conocidos():
     """Los pendientes esperan decision de Administracion DEP; al definirlos, moverlos a CATALOGO."""
     assert set(RES.PENDIENTES) == {"sin_tarea_1_2", "varias_tareas_1_2", "sin_termino_vigente",
-                                   "tarea_de_linea_base_ahora_no_aplica", "hh_en_tarea_no_hoja",
-                                   "hh_distinta_de_time_estimate"}
+                                   "tarea_de_linea_base_ahora_no_aplica"}
+    assert set(RES.SOLO_CALIDAD) == P.SOLO_CALIDAD
 
 
 @pytest.mark.parametrize("tipo", sorted(RES.CATALOGO))
@@ -59,7 +60,7 @@ def test_ejemplos_de_texto():
     assert r["como_resolver"] == "En ClickUp, renombra la lista como «PJ-2024.0008 | AITO | cliente»."
     assert RES.resolver("linea_base_tardia", RES.Contexto(datos={"fecha": dt.date(2026, 9, 23)}))[
         "responsable_accion"] == RES.INFORMATIVA
-    assert RES.resolver("hh_distinta_de_time_estimate", RES.Contexto()) == \
+    assert RES.resolver("sin_termino_vigente", RES.Contexto()) == \
         {"como_resolver": None, "responsable_accion": None, "impacto": None}
 
 

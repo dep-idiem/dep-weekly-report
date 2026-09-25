@@ -35,20 +35,33 @@ ADV_LB_TARDIA = "linea_base_tardia"
 ADV_LB_SIN_HH = "linea_base_sin_hh"
 ADV_CODIGO_DUPLICADO = "codigo_duplicado_en_clickup"
 ADV_NOMBRE_SIN_FORMATO = "nombre_lista_sin_formato"
+# Reglas de conteo de horas (horas.py)
+ADV_HORAS_EN_PADRE = "horas_en_tarea_padre"
+ADV_HORAS_ADMIN = "horas_en_administracion"
+ADV_FUERA_DE_PLAZO = "horas_fuera_de_plazo"
+ADV_FASE_OTRO_PROYECTO = "fase_de_otro_proyecto"
+ADV_TT_SIN_CLICKUP = "horas_timetracker_sin_clickup"
+ADV_LISTA_COMBINADA = "lista_combinada"
 
 # Advertencias de nivel proyecto: se escriben siempre en la hoja (decision 2 de la fase 2). Las demas solo
 # si son de una tarea con HH Presupuestadas; el detalle completo queda en calidad_datos.md.
 NIVEL_PROYECTO = {
     ADV_SIN_JP, ADV_EN_PLANIFICACION, ADV_SIN_TAREA_12, ADV_TAREA_12_NO_APLICA, ADV_VARIAS_TAREAS_12,
     ADV_TERMINO_VENCIDO, ADV_SIN_TERMINO, ADV_HH_CAMBIARON, ADV_LB_SIN_HH, ADV_LB_TARDIA, ADV_CODIGO_DUPLICADO,
-    ADV_NOMBRE_SIN_FORMATO,
+    ADV_NOMBRE_SIN_FORMATO, ADV_HORAS_ADMIN, ADV_FUERA_DE_PLAZO, ADV_FASE_OTRO_PROYECTO, ADV_TT_SIN_CLICKUP,
+    ADV_LISTA_COMBINADA,
     "hh_en_padre_y_subtarea",   # doble conteo (calidad.DOBLE_CONTEO)
 }
+# De nivel tarea, pero se escriben aunque la tarea no tenga HH Presupuestadas.
+SIEMPRE_EN_HOJA = NIVEL_PROYECTO | {ADV_HORAS_EN_PADRE}
+# Solo en calidad_datos.md, nunca en la hoja: HH Presupuestadas distintas del time estimate (o sin el).
+SOLO_CALIDAD = {"hh_distinta_de_time_estimate"}
 
 
 def para_hoja(advertencias: Sequence[dict], tareas_con_hh: set[str]) -> list[dict]:
     """Advertencias que van a la hoja que ven los JP."""
-    return [a for a in advertencias if a["tipo"] in NIVEL_PROYECTO or a.get("task_id") in tareas_con_hh]
+    return [a for a in advertencias if a["tipo"] not in SOLO_CALIDAD
+            and (a["tipo"] in SIEMPRE_EN_HOJA or a.get("task_id") in tareas_con_hh)]
 
 
 @dataclass(frozen=True)
@@ -122,11 +135,17 @@ class _Acum:
 
 def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica], horas: Sequence[Horas],
              control: dt.date, fin: dt.date | None, modo: Modo,
-             fase_lb: Mapping[str, str] | None = None) -> ResultadoProyecto:
+             fase_lb: Mapping[str, str] | None = None, hh_historicas: float = 0.0,
+             desde_historico: dt.date | None = None) -> ResultadoProyecto:
     """Metricas de un proyecto al corte `control`.
 
     lb: tareas de la linea base vigente (None = sin linea base: no hay programado).
     fase_lb: task_id -> fase guardada en la linea base (si falta, se usa la fase actual de ClickUp).
+    hh_historicas: saldo del Timetracker antes del corte historico (horas.py). Se suma a las HH gastadas de
+        metricas_semanales, a CPI y a las HH estimadas al termino. En la serie diaria, las gastadas parten del saldo
+        en `desde_historico` (antes quedan vacias) y la proyeccion lo incluye, para que la curva termine en el valor
+        de metricas_semanales. Las fases usan solo `horas`.
+    desde_historico: fecha del corte historico (si es posterior al corte, la serie parte en el corte).
     """
     cal = modo.cal
     avisos: list[Aviso] = []
@@ -192,18 +211,20 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
         g0 = (min(starts) if starts else control) - dt.timedelta(days=1)
         ultimo = g0 + dt.timedelta(days=((control - g0).days // modo.paso_grilla_legado) * modo.paso_grilla_legado)
         base = horas_ord.hasta(ultimo, inclusive=False)
-    estimadas = base + sum(pend_diario.values())
+    estimadas = hh_historicas + base + sum(pend_diario.values())
+    gastadas_total = hh_historicas + gastadas
 
     ev = avance_real * total if (avance_real is not None and total) else None
     metricas = {
         "total_hh": total,
         "hh_prog_acum": hh_prog_acum,
-        "hh_gastadas_acum": gastadas,
+        "hh_gastadas_acum": gastadas_total,
+        "hh_historicas": hh_historicas,
         "avance_prog": avance_prog,
         "avance_real": avance_real,
         "ev": ev,
         "spi": ev / hh_prog_acum if (ev is not None and hh_prog_acum) else None,
-        "cpi": ev / gastadas if (ev is not None and gastadas) else None,
+        "cpi": ev / gastadas_total if (ev is not None and gastadas_total) else None,
         "hh_estimadas_al_termino": estimadas,
         "hh_actuales_clickup": tot_act,
         "fecha_termino_usada": fin,
@@ -215,9 +236,12 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
     d1 = max([fin, control] + [t.due for t in lb_u if t.due] + list(pend_diario))
     serie = []
     d = d0
+    parte = min(desde_historico, control) if (hh_historicas and desde_historico) else None
     while d <= d1:
         g = horas_ord.hasta(d, inclusive=inclusivo) if d <= control else None
-        p = base + pend.hasta(d) if d >= control else None
+        if g is not None and hh_historicas:
+            g = hh_historicas + g if (parte is None or d >= parte) else None
+        p = hh_historicas + base + pend.hasta(d) if d >= control else None
         serie.append(m.PuntoSerie(d, prog.hasta(d) if lb is not None else 0.0, g, p))
         d += dt.timedelta(days=1)
 

@@ -17,7 +17,7 @@ import json
 import logging
 import sys
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
@@ -28,11 +28,12 @@ from dep_clickup.models import ListInfo, Member, Task
 from dep_clickup.naming import list_code
 
 from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, presentacion as PR, proyecto as P
-from . import resolucion as RES
+from . import horas as H, personas as PERS, resolucion as RES
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
 from .config_reportes import (DRY_RUN_DIR, FOLDER_PJ_INGENIERIA, IMPORTADAS, RESPALDOS_DIR,
-                              RETENCION_PRELIMINAR_DIAS, SHEETS_REPORTES_ID, TIME_ENTRIES_DESDE)
+                              RETENCION_PRELIMINAR_DIAS, SHEETS_REPORTES_ID, TIME_ENTRIES_DESDE, TIMETRACKER_LIST_ID,
+                              UMBRAL_HORAS_ADMINISTRACION, MINIMO_HORAS_ADMINISTRACION, cortes_historicos)
 from .metricas import Horas, TareaMetrica
 from .modos import Modo, por_nombre
 
@@ -52,6 +53,16 @@ def fecha_corte(txt: str | None, hoy: dt.date, tipo_corte: str = E.OFICIAL) -> d
     if tipo_corte == E.OFICIAL and d.weekday() != 6:
         raise SystemExit(f"--corte {d} no es domingo ({d:%A}): un corte oficial debe ser domingo")
     return d
+
+
+@dataclass(frozen=True)
+class Conteo:
+    """Saldo historico de un proyecto (horas.py)."""
+    hh_historicas: float = 0.0
+    corte_historico: dt.date | None = None
+    tt_sin_clickup: float = 0.0
+    n_nativas_previas: int = 0          # entradas nativas anteriores al corte historico (excluidas del conteo)
+    h_nativas_previas: float = 0.0
 
 
 class ControlFallido(RuntimeError):
@@ -104,12 +115,16 @@ class Corrida:
     filas_antes: dict = field(default_factory=dict)
     tipos: dict = field(default_factory=dict)
     verificacion: dict = field(default_factory=dict)
+    depuracion: H.Depuracion | None = None
+    conteos: dict = field(default_factory=dict)          # list_id -> Conteo
+    personas: PERS.ReglasPersonas | None = None          # dashboard confidencial (fase 5): solo en memoria
 
 
 def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros: list[Member], corte: dt.date,
                    modo: Modo, lb_exist: list[LB.FilaLB], observada_antes: bool, primera_corrida: bool,
                    ahora: dt.datetime, codigo: str | None = None,
-                   comparten_codigo: Sequence[ListInfo] = ()) -> ResultadoLista:
+                   comparten_codigo: Sequence[ListInfo] = (), conteo: Conteo = Conteo(),
+                   umbral_admin: float = UMBRAL_HORAS_ADMINISTRACION) -> ResultadoLista:
     codigo = codigo or list_code(lista.name) or lista.id
     tm = a_tareas_metrica(tareas)
     horas = a_horas(entradas_lista)
@@ -156,8 +171,17 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     lb_tareas, fase_lb = LB.a_tareas(lb_filas) if lb_filas else (None, {})
 
     fin = lista.due.date() if lista.due else None
-    res = P.calcular(lb_tareas, tm, horas, corte, fin, modo, fase_lb)
+    res = P.calcular(lb_tareas, tm, horas, corte, fin, modo, fase_lb, hh_historicas=conteo.hh_historicas,
+                     desde_historico=conteo.corte_historico)
     avisos += res.avisos
+    # Reglas de conteo de horas (solo horas nativas hasta el corte)
+    al_corte = [h for h in horas if h.fecha <= corte]
+    avisos += H.horas_en_padres(tm, al_corte)
+    avisos += H.horas_en_administracion(tm, al_corte, umbral_admin, MINIMO_HORAS_ADMINISTRACION)
+    avisos += H.horas_fuera_de_plazo(al_corte, LB.inicio_proyecto(lista, tareas), fin)
+    avisos += H.fases_de_otro_proyecto(tm, lista.name)
+    avisos += H.lista_combinada(tm)
+    avisos += H.aviso_tt_sin_clickup(conteo.tt_sin_clickup, conteo.corte_historico)
 
     padres = {t.id: t.parent for t in tm}
     hpt = horas_por_tarea([h for h in horas if h.fecha <= corte], padres, acumular_en_ancestros=True)
@@ -247,7 +271,7 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
     cu = cu or ClickUpClient()
     team_id = cu.get_team_id()
     miembros = cu.list_members(team_id)
-    listas = cu.list_lists(FOLDER_PJ_INGENIERIA)
+    listas = cu_listas_todas = cu.list_lists(FOLDER_PJ_INGENIERIA)
     # Codigos unicos y estables: se asignan con todas las listas del folder (tambien con --solo).
     previos = {f["list_id"]: f["codigo"] for f in existentes.get("proyectos", []) if f.get("codigo")}
     asig = COD.asignar([(l.id, l.name) for l in listas], previos)
@@ -257,17 +281,43 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
         listas = [l for l in listas if l.id == solo]
         if not listas:
             raise SystemExit(f"La lista {solo} no está en el folder {FOLDER_PJ_INGENIERIA}")
-    entradas = cu.list_time_entries(TIME_ENTRIES_DESDE, corte, folder_id=FOLDER_PJ_INGENIERIA,
-                                    assignees=[x.id for x in miembros], team_id=team_id)
+    # Reglas de conteo (horas.py): se piden tambien las entradas posteriores al corte, para contar las futuras
+    # y fijar el corte historico; las metricas usan solo las nativas hasta el corte.
+    hoy = ahora.date()
+    raw = cu.list_time_entries_raw(TIME_ENTRIES_DESDE, dt.date(max(hoy, corte).year + 5, 12, 31),
+                                   folder_id=FOLDER_PJ_INGENIERIA, assignees=[x.id for x in miembros], team_id=team_id)
+    corrida.depuracion = dep = H.depurar(raw, hoy)
+    entradas = [e for e in dep.nativas if e.date <= corte]
     corrida.n_entradas = len(entradas)
+    corrida.personas = PERS.calcular(entradas)
     por_lista = defaultdict(list)
     for e in entradas:
         por_lista[e.list_id].append(e)
+    nativas_lista = defaultdict(list)
+    for e in dep.nativas:
+        nativas_lista[e.list_id].append(e)
+    tt = H.leer_timetracker(cu, TIMETRACKER_LIST_ID) if TIMETRACKER_LIST_ID else []
+    tt_por_codigo = defaultdict(list)
+    for reg in tt:
+        tt_por_codigo[reg.codigo].append(reg)
+    # Un codigo del Timetracker se asigna solo si una unica lista del folder tiene ese codigo base.
+    bases = Counter(H.codigo_sin_prefijo(list_code(l.name) or "") for l in cu_listas_todas)
+    manuales = cortes_historicos()
     for lista in sorted(listas, key=lambda l: l.name):
+        base = H.codigo_sin_prefijo(list_code(lista.name) or "")
+        regs = tt_por_codigo.get(base, []) if base and bases[base] == 1 else []
+        ch = H.corte_historico(nativas_lista[lista.id], manuales.get(asig.codigos[lista.id]))
+        # Las nativas anteriores al corte historico se excluyen: ese periodo lo cubre el Timetracker.
+        previas = [e for e in por_lista.get(lista.id, []) if ch and e.date < ch] if regs else []
+        conteo = Conteo(H.saldo_historico(regs, ch, corte) if regs else 0.0, ch,
+                        H.tt_sin_clickup(regs, ch, corte, nativas_lista[lista.id]) if regs else 0.0,
+                        len(previas), sum(e.hours for e in previas))
+        corrida.conteos[lista.id] = conteo
+        contadas = [e for e in por_lista.get(lista.id, []) if not (regs and ch and e.date < ch)]
         tareas = cu.list_tasks(lista.id)
-        corrida.listas.append(procesar_lista(lista, tareas, por_lista.get(lista.id, []), miembros, corte, modo,
+        corrida.listas.append(procesar_lista(lista, tareas, contadas, miembros, corte, modo,
                                              lb_exist, lista.id in observadas, corrida.primera_corrida, ahora,
-                                             asig.codigos[lista.id], comparten.get(lista.id, ())))
+                                             asig.codigos[lista.id], comparten.get(lista.id, ()), conteo))
     corrida.segundos_clickup = time.monotonic() - t0
     corrida.peticiones_clickup = dict(cu.request_log)
 
@@ -279,7 +329,8 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
     nuevas["ejecuciones"] = [{"ejecutado_en": ahora, "corte": corte, "tipo_corte": tipo_corte,
                               "modo": "dry_run" if dry_run else "escritura",
                               "n_proyectos": len(corrida.listas), "n_lineas_base_nuevas": n_lb,
-                              "resultado": "ok", "detalle_error": ""}]
+                              "resultado": "ok", "detalle_error": "", **dep.conteos(),
+                              "n_nativas_previas_excluidas": sum(c.n_nativas_previas for c in corrida.conteos.values())}]
     alcance = {l.id for l in listas} if solo else None
     corrida.nuevas = nuevas
     corrida.lb_nuevas = [f for f in fusionar("linea_base", existentes.get("linea_base", []), nuevas["linea_base"], corte)
@@ -388,6 +439,13 @@ def _escribir_resumen(c: Corrida, ruta) -> None:
         "peticiones_sheets_lectura": dict(c.peticiones_sheets) if c.peticiones_sheets else None,
         "plan_sheets": c.plan_sheets, "segundos_clickup": round(c.segundos_clickup, 1),
         "filas": {t: len(f) for t, f in c.nuevas.items()},
+        "depuracion_horas": c.depuracion.conteos() if c.depuracion else None,
+        "saldo_historico": {r.codigo: {"corte_historico": str(c.conteos[r.lista.id].corte_historico),
+                                       "hh_historicas": round(c.conteos[r.lista.id].hh_historicas, 2),
+                                       "tt_sin_clickup": round(c.conteos[r.lista.id].tt_sin_clickup, 2),
+                                       "n_nativas_previas": c.conteos[r.lista.id].n_nativas_previas,
+                                       "h_nativas_previas": round(c.conteos[r.lista.id].h_nativas_previas, 2)}
+                            for r in c.listas if r.lista.id in c.conteos},
     }
     ruta.write_text(json.dumps(resumen, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
 

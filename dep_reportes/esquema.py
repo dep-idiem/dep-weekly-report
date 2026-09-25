@@ -19,7 +19,9 @@ IDENT = [("codigo", TEXTO)] + PRESENTACION + [("jp_nombre", TEXTO), ("jp_email",
 OFICIAL, PRELIMINAR = "oficial", "preliminar"
 CORTE = [("tipo_corte", TEXTO), ("es_ultimo_corte", BOOLEANO), ("es_ultimo_oficial", BOOLEANO)]
 
-METRICAS = [("total_hh", NUMERO), ("hh_prog_acum", NUMERO), ("hh_gastadas_acum", NUMERO), ("avance_prog", NUMERO),
+# hh_gastadas_acum = hh_historicas (saldo del Timetracker) + horas nativas de ClickUp (horas.py).
+METRICAS = [("total_hh", NUMERO), ("hh_prog_acum", NUMERO), ("hh_gastadas_acum", NUMERO), ("hh_historicas", NUMERO),
+            ("avance_prog", NUMERO),
             ("avance_real", NUMERO), ("ev", NUMERO), ("spi", NUMERO), ("cpi", NUMERO),
             ("hh_estimadas_al_termino", NUMERO), ("hh_actuales_clickup", NUMERO)]
 
@@ -50,7 +52,10 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                        ("como_resolver", TEXTO), ("responsable_accion", TEXTO), ("impacto", TEXTO)],
     "ejecuciones": [("ejecutado_en", FECHA_HORA), ("corte", FECHA), ("tipo_corte", TEXTO), ("modo", TEXTO),
                     ("n_proyectos", ENTERO),
-                    ("n_lineas_base_nuevas", ENTERO), ("resultado", TEXTO), ("detalle_error", TEXTO)],
+                    ("n_lineas_base_nuevas", ENTERO), ("resultado", TEXTO), ("detalle_error", TEXTO),
+                    ("n_importadas_excluidas", ENTERO), ("n_duplicadas_excluidas", ENTERO),
+                    ("n_duracion_no_positiva_excluidas", ENTERO), ("n_futuras_excluidas", ENTERO),
+                    ("n_nativas_previas_excluidas", ENTERO)],
 }
 
 # Politica de escritura por tabla

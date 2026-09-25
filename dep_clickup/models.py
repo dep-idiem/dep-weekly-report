@@ -103,6 +103,7 @@ class TimeEntry:
     duration_ms: int
     description: str = ""
     updated: dt.datetime | None = None   # campo "at" de la API
+    source: str = ""                     # "clickup" (app), "api" (integracion o importacion), ...
 
     @property
     def date(self) -> dt.date:

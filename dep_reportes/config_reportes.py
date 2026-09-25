@@ -23,6 +23,15 @@ def parametros() -> dict:
 
 
 RETENCION_PRELIMINAR_DIAS = int(parametros().get("retencion_preliminar_dias", 15))
+# Reglas de conteo de horas (horas.py)
+TIMETRACKER_LIST_ID = parametros().get("timetracker_list_id", "")
+UMBRAL_HORAS_ADMINISTRACION = float(parametros().get("umbral_horas_administracion", 0.2))
+MINIMO_HORAS_ADMINISTRACION = float(parametros().get("minimo_horas_administracion", 20))
+
+
+def cortes_historicos() -> dict[str, dt.date]:
+    """codigo del proyecto -> fecha de corte historico fijada a mano (si falta: primera entrada nativa)."""
+    return {k: dt.date.fromisoformat(v) for k, v in (parametros().get("corte_historico") or {}).items()}
 
 
 @dataclass(frozen=True)

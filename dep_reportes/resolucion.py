@@ -154,14 +154,63 @@ CATALOGO: dict[str, Entrada] = {
         JP, INFORMATIVA, INFORMATIVA, _nombre_sin_formato),
 }
 
+def _tt_sin_clickup(c: Contexto, adm: str) -> str:
+    d = c.datos or {}
+    cuanto = f"las {PR.num(d['horas'])} h" if "horas" in d else "las horas"
+    desde = f" desde el {PR.fecha(d['desde'])}" if d.get("desde") else ""
+    return (f"Revisa con el JP {cuanto} del Timetracker{desde} de la lista {_l(c)}: regístralas en ClickUp o "
+            "confirma que no corresponden.")
+
+
+CATALOGO.update({
+    "hh_en_tarea_no_hoja": Entrada(
+        "Una tarea padre tiene HH Presupuestadas y sus subtareas no: no distorsiona el cálculo, pero incumple la "
+        "convención de presupuestar solo en subtareas.",
+        JP, INFORMATIVA, INFORMATIVA, lambda c, a: f"En ClickUp, reparte las HH Presupuestadas de {_t(c)} entre sus "
+                                                   "subtareas y borra el valor del padre."),
+    "horas_en_tarea_padre": Entrada(
+        "Hay horas registradas directamente en una tarea que tiene subtareas: no se sabe en qué subtarea se trabajó.",
+        JP, DISTORSIONA, DISTORSIONA, lambda c, a: f"Registra las horas en las subtareas de {_t(c)}, no en la tarea "
+                                                   "padre."),
+    "horas_en_administracion": Entrada(
+        "Las horas registradas en la fase 00 Administración superan el umbral del proyecto (config/reportes.json).",
+        JP, DISTORSIONA, DISTORSIONA, lambda c, a: f"En la lista {_l(c)}, registra en las subtareas del trabajo "
+                                                   "realizado las horas que hoy van a «00 Administración»; deja ahí "
+                                                   "solo la gestión del proyecto."),
+    "horas_fuera_de_plazo": Entrada(
+        "Hay entradas de tiempo antes del inicio o después del término del proyecto.",
+        JP, DISTORSIONA, DISTORSIONA, lambda c, a: f"En la lista {_l(c)}, corrige la fecha o la tarea de las entradas "
+                                                   "fuera del plazo, o actualiza el inicio y el término de la lista."),
+    "fase_de_otro_proyecto": Entrada(
+        "Una fase de la lista lleva en su nombre el código de otro proyecto: sus horas cuentan en el proyecto "
+        "equivocado.",
+        ADMIN, DISTORSIONA, DISTORSIONA, lambda c, a: f"Mueve la fase {_t(c)} a la lista de su proyecto o corrige el "
+                                                      "código en su nombre."),
+    "lista_combinada": Entrada(
+        "La lista tiene fases de más de un proyecto (códigos distintos en los nombres de sus fases): las horas de "
+        "ambos se reportan juntas.",
+        ADMIN, DISTORSIONA, DISTORSIONA,
+        lambda c, a: (f"Separa en listas distintas las fases de cada proyecto"
+                      + (f" ({', '.join((c.datos or {})['codigos'])})" if (c.datos or {}).get("codigos") else "")
+                      + f" en {_l(c)}, o confirma que se reportan juntos.")),
+    "horas_timetracker_sin_clickup": Entrada(
+        "El Timetracker antiguo tiene horas del proyecto posteriores al inicio del registro en ClickUp que no "
+        "están en ClickUp: posibles horas sin registrar.",
+        ADMIN, DISTORSIONA, DISTORSIONA, _tt_sin_clickup),
+})
+
 # Tipos sin solucion acordada todavia: columnas vacias hasta que se definan (propuestas en el informe).
 PENDIENTES: dict[str, str] = {
     "sin_tarea_1_2": "No hay tarea 1.2 Plan de Trabajo en la fase 01.",
     "varias_tareas_1_2": "Hay más de una tarea 1.2 en la fase 01.",
     "sin_termino_vigente": "La lista no tiene fecha de vencimiento.",
     "tarea_de_linea_base_ahora_no_aplica": "Una tarea de la línea base está hoy en No Aplica.",
-    "hh_en_tarea_no_hoja": "Una tarea padre tiene HH Presupuestadas y sus subtareas no.",
-    "hh_distinta_de_time_estimate": "Las HH Presupuestadas de una tarea no coinciden con su time estimate.",
+}
+
+# Tipos que no van a la hoja (proyecto.SOLO_CALIDAD): solo en calidad_datos.md.
+SOLO_CALIDAD: dict[str, str] = {
+    "hh_distinta_de_time_estimate": "Las HH Presupuestadas de una tarea no coinciden con su time estimate (o no "
+                                    "tiene).",
 }
 
 
@@ -203,6 +252,8 @@ ACCION_GRUPAL: dict[str, Callable[[str, int, bool, str], str]] = {
         "trabajadas (en la subtarea, nunca en el padre) o corrige su Avance Real si aún no se ha trabajado."),
     "horas_sin_avance": lambda ts, n, lb, a: (
         f"En ClickUp, actualiza el Avance Real de estas {n} tareas, que tienen horas registradas y 0 % de avance: {ts}."),
+    "horas_en_tarea_padre": lambda ts, n, lb, a: (
+        f"Registra las horas en las subtareas, no en la tarea padre, en estas {n} tareas: {ts}."),
     "no_aplica_con_hh": lambda ts, n, lb, a: (
         f"En ClickUp, borra las HH Presupuestadas de estas {n} tareas en No Aplica o, si sí aplican, cambia su "
         f"estado: {ts}."),

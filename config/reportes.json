@@ -3,5 +3,11 @@
   "responsable_administracion": "Administración DEP",
   "enlace_reporte": "",
   "fecha_primer_reporte_oficial": "2026-09-28",
-  "plantilla_mensaje_jp": "config/plantilla_mensaje_jp.txt"
+  "plantilla_mensaje_jp": "config/plantilla_mensaje_jp.txt",
+  "timetracker_list_id": "901322429850",
+  "umbral_horas_administracion": 0.2,
+  "corte_historico": {
+    "PJ-2025.0019": "2026-07-20"
+  },
+  "minimo_horas_administracion": 20
 }
