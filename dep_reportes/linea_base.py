@@ -145,10 +145,12 @@ def decidir(list_id: str, tareas: Sequence[Task], existentes: Sequence[FilaLB], 
     t12 = tareas_12(tareas)
     avisos: list[Aviso] = []
     if len(t12) > 1:
-        avisos.append(Aviso(ADV_VARIAS_TAREAS_12, t12[0].id, f"{len(t12)} tareas 1.2 en la fase 01; se usa \"{t12[0].name}\""))
+        avisos.append(Aviso(ADV_VARIAS_TAREAS_12, t12[0].id, f"{len(t12)} tareas 1.2 en la fase 01; se usa \"{t12[0].name}\"",
+                            {"n": len(t12)}))
     if not t12:
         if primera_corrida:
-            avisos.append(Aviso(ADV_SIN_TAREA_12, "", "Sin tarea 1.2 en la fase 01: Rev. 0 tardía con la foto actual"))
+            avisos.append(Aviso(ADV_SIN_TAREA_12, "", "Sin tarea 1.2 en la fase 01: Rev. 0 tardía con la foto actual",
+                                {"tardia": True}))
             return Decision("congelar", "tardia", "vigente", False, tuple(avisos))
         avisos.append(Aviso(ADV_SIN_TAREA_12, "", "Sin tarea 1.2 en la fase 01: no se congela automáticamente"))
         return Decision("ninguna", None, "sin_linea_base", False, tuple(avisos))

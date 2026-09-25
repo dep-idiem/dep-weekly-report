@@ -238,8 +238,11 @@ def test_encabezados_distintos_abortan():
 def test_ida_y_vuelta_de_valores():
     fila = {"corte": D(2026, 9, 20), "tipo_corte": "oficial", "es_ultimo_corte": True, "es_ultimo_oficial": True,
             "list_id": "901", "codigo": "PJ-2026.0152",
-            "jp_nombre": "Ana", "jp_email": "ana@x.cl", "rev_linea_base": 0, "modo_calculo": "dep",
-            **{c: 1.5 for c, _ in E.METRICAS}, "n_advertencias": 3}
+            "nombre_corto": "Evaluación estructural", "cliente": "NESTLE", "proyecto": "2026.0152 · Evaluación estructural",
+            "jp_nombre": "Ana", "jp_email": "ana@x.cl", "rev_linea_base": 0, "tiene_linea_base": True,
+            "modo_calculo": "dep", **{c: 1.5 for c, _ in E.METRICAS}, "desviacion_pts": -1.1,
+            "pct_presupuesto_usado": 0.4, "titular": "Avance real 73,2 % frente a 74,3 % programado: 1,1 puntos bajo el plan.",
+            "n_advertencias": 3}
     ti = E.tipos("metricas_semanales")
     valores = [E.columnas("metricas_semanales"), [A.celda_sheets(fila[c], ti[c]) for c in E.columnas("metricas_semanales")]]
     assert A.filas_desde_valores("metricas_semanales", valores) == [fila]

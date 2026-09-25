@@ -34,12 +34,14 @@ ADV_LB_TAREA_NO_APLICA = "tarea_de_linea_base_ahora_no_aplica"
 ADV_LB_TARDIA = "linea_base_tardia"
 ADV_LB_SIN_HH = "linea_base_sin_hh"
 ADV_CODIGO_DUPLICADO = "codigo_duplicado_en_clickup"
+ADV_NOMBRE_SIN_FORMATO = "nombre_lista_sin_formato"
 
 # Advertencias de nivel proyecto: se escriben siempre en la hoja (decision 2 de la fase 2). Las demas solo
 # si son de una tarea con HH Presupuestadas; el detalle completo queda en calidad_datos.md.
 NIVEL_PROYECTO = {
     ADV_SIN_JP, ADV_EN_PLANIFICACION, ADV_SIN_TAREA_12, ADV_TAREA_12_NO_APLICA, ADV_VARIAS_TAREAS_12,
     ADV_TERMINO_VENCIDO, ADV_SIN_TERMINO, ADV_HH_CAMBIARON, ADV_LB_SIN_HH, ADV_LB_TARDIA, ADV_CODIGO_DUPLICADO,
+    ADV_NOMBRE_SIN_FORMATO,
     "hh_en_padre_y_subtarea",   # doble conteo (calidad.DOBLE_CONTEO)
 }
 
@@ -54,6 +56,7 @@ class Aviso:
     tipo: str
     task_id: str
     detalle: str
+    datos: dict = field(default_factory=dict, compare=False)   # para el mensaje en español (presentacion.py)
 
 
 @dataclass
@@ -136,7 +139,7 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
     no_aplica = [t for t in m.universo(actuales) if es_no_aplica(t)]
     for t in no_aplica:
         avisos.append(Aviso(ADV_NO_APLICA_CON_HH, t.id, f"\"{t.nombre}\" está en No Aplica con HH={t.hh:g}"
-                            + (" (excluida del universo)" if modo.excluir_no_aplica else "")))
+                            + (" (excluida del universo)" if modo.excluir_no_aplica else ""), {"hh": t.hh}))
     ids_na = {t.id for t in no_aplica}
     actual_u = [t for t in m.universo(actuales) if not (modo.excluir_no_aplica and t.id in ids_na)]
     lb_u = m.universo(lb or [])
@@ -149,10 +152,11 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
         fin = max(dues) if dues else control
         avisos.append(Aviso(ADV_SIN_TERMINO, "", "La lista no tiene fecha de vencimiento; "
                             + (f"se usa el due más tardío de las tareas con HH ({fin})" if dues else
-                               "tampoco hay tareas con HH y fechas")))
+                               "tampoco hay tareas con HH y fechas"), {"fin": fin if dues else None}))
     if fin <= control and not sin_fecha:
         avisos.append(Aviso(ADV_TERMINO_VENCIDO, "", f"Término vigente {fin} ≤ corte {control}"
-                            + ("; pendientes atrasadas al primer día hábil después del corte" if modo.vencido_primer_habil else "")))
+                            + ("; pendientes atrasadas al primer día hábil después del corte" if modo.vencido_primer_habil else ""),
+                            {"fin": fin}))
 
     # Programado (linea base)
     total = m.total_hh(lb_u) if lb is not None else None
@@ -163,7 +167,7 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
     if lb is not None:
         for t in lb_u:
             if t.id in ids_na:
-                avisos.append(Aviso(ADV_LB_TAREA_NO_APLICA, t.id, f"\"{t.nombre}\" (HH={t.hh:g} en la línea base) está hoy en No Aplica"))
+                avisos.append(Aviso(ADV_LB_TAREA_NO_APLICA, t.id, f"\"{t.nombre}\" (HH={t.hh:g} en la línea base) está hoy en No Aplica", {"hh": t.hh}))
 
     # Real
     tot_act = m.total_hh(actual_u)
@@ -173,7 +177,7 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
     gastadas = horas_ord.hasta(control, inclusive=inclusivo)
     if total is not None and abs(tot_act - total) > 1e-6:
         avisos.append(Aviso(ADV_HH_CAMBIARON, "", f"HH actuales en ClickUp {tot_act:g} vs línea base {total:g}: "
-                                                  "¿corresponde una revisión?"))
+                                                  "¿corresponde una revisión?", {"actual": tot_act, "linea_base": total}))
 
     # Proyeccion
     pend_diario: dict[dt.date, float] = defaultdict(float)

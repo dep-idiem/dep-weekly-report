@@ -27,7 +27,7 @@ from dep_clickup.config import TZ
 from dep_clickup.models import ListInfo, Member, Task
 from dep_clickup.naming import list_code
 
-from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, proyecto as P
+from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, presentacion as PR, proyecto as P
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
 from .config_reportes import (DRY_RUN_DIR, FOLDER_PJ_INGENIERIA, IMPORTADAS, RESPALDOS_DIR,
@@ -118,11 +118,15 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
         otras = "; ".join(f"{o.id} ({o.name.split('|')[1].strip() if '|' in o.name else o.name})"
                           for o in comparten_codigo)
         avisos.append(P.Aviso(P.ADV_CODIGO_DUPLICADO, "", f"El código {list_code(lista.name)} está también en: "
-                                                          f"{otras}. En los reportes esta lista es {codigo}"))
+                                                          f"{otras}. En los reportes esta lista es {codigo}",
+                              {"codigo_base": list_code(lista.name), "codigo": codigo}))
+    if not PR.partes_nombre(lista.name)[2]:
+        avisos.append(P.Aviso(P.ADV_NOMBRE_SIN_FORMATO, "", f"El nombre \"{lista.name}\" no sigue el formato "
+                                                            "\"PJ-XXXX | nombre | cliente\": se usa el nombre sin el código"))
     if jp is None:
         det = "La lista no tiene responsable" if not (lista.assignee_id or lista.assignee_username) else \
             f"Responsable \"{lista.assignee_username}\" no se encontró entre los miembros"
-        avisos.append(P.Aviso(P.ADV_SIN_JP, "", det))
+        avisos.append(P.Aviso(P.ADV_SIN_JP, "", det, {"responsable": lista.assignee_username}))
 
     dec = LB.decidir(lista.id, tareas, lb_exist, observada_antes, primera_corrida, tuple(IMPORTADAS))
     avisos += dec.avisos
@@ -142,7 +146,8 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     if lb_filas and lb_filas[0].rev == 0 and lb_filas[0].tipo == "tardia":
         # Estable entre corridas del mismo corte: depende solo de la linea base guardada.
         avisos.append(P.Aviso(P.ADV_LB_TARDIA, "", f"Rev. 0 tardía: congelada el {lb_filas[0].fecha_captura:%Y-%m-%d} "
-                                                   "con la foto de ese día (la 1.2 ya estaba cerrada o no existía)"))
+                                                   "con la foto de ese día (la 1.2 ya estaba cerrada o no existía)",
+                              {"fecha": lb_filas[0].fecha_captura}))
     if dec.en_planificacion:
         avisos.append(P.Aviso(P.ADV_EN_PLANIFICACION, "", "Tarea 1.2 abierta: proyecto en planificación, sin línea base"))
     lb_tareas, fase_lb = LB.a_tareas(lb_filas) if lb_filas else (None, {})
@@ -154,17 +159,27 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     padres = {t.id: t.parent for t in tm}
     hpt = horas_por_tarea([h for h in horas if h.fecha <= corte], padres, acumular_en_ancestros=True)
     detector = calidad.detectar(tm, hpt, {t.id: t.time_estimate_h for t in tareas})
-    adv = [{"corte": corte, "list_id": lista.id, "tipo": a.tipo, "task_id": a.task_id or "", "detalle": a.detalle}
+    nombres = {f.task_id: f.task_nombre for f in lb_filas} | {t.id: t.nombre for t in tm}
+    adv = [fila_advertencia(corte, lista.id, a.tipo, a.task_id or "", a.detalle, nombres.get(a.task_id), a.datos)
            for a in avisos]
-    adv += [{"corte": corte, "list_id": lista.id, "tipo": a.tipo, "task_id": a.tarea_id,
-             "detalle": f"{a.tarea}: {a.detalle}"} for a in detector]
+    adv += [fila_advertencia(corte, lista.id, a.tipo, a.tarea_id, f"{a.tarea}: {a.detalle}", a.tarea, a.datos)
+            for a in detector]
     con_hh = {t.id for t in tm if t.hh} | {f.task_id for f in lb_filas}
     return ResultadoLista(lista, codigo, jp, tareas, tm, horas, dec, lb_filas, nuevas, res,
                           P.para_hoja(adv, con_hh), adv)
 
 
+def fila_advertencia(corte: dt.date, list_id: str, tipo: str, task_id: str, detalle: str, tarea: str | None,
+                     datos: dict) -> dict:
+    return {"corte": corte, "list_id": list_id, "tipo": tipo, "nivel": PR.nivel(tipo), "task_id": task_id,
+            "detalle": detalle, "mensaje": PR.mensaje(tipo, tarea, datos)}
+
+
 def identificacion(r: ResultadoLista) -> dict:
-    return {"codigo": r.codigo, "jp_nombre": r.jp.username if r.jp else SIN_JP, "jp_email": r.jp.email if r.jp else ""}
+    nombre_corto, cliente, _ = PR.partes_nombre(r.lista.name)
+    return {"codigo": r.codigo, "nombre_corto": nombre_corto, "cliente": cliente,
+            "proyecto": PR.etiqueta_proyecto(r.codigo, nombre_corto),
+            "jp_nombre": r.jp.username if r.jp else SIN_JP, "jp_email": r.jp.email if r.jp else ""}
 
 
 def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
@@ -183,9 +198,10 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
         "rev_vigente": rev, "actualizado_en": ahora,
     })
     tc = {"corte": corte, "tipo_corte": tipo_corte}
-    out["metricas_semanales"].append({**tc, "list_id": lid, **idn, "rev_linea_base": rev,
-                                      "modo_calculo": modo.nombre,
-                                      **{c: mt.get(c) for c, _ in E.METRICAS}, "n_advertencias": len(r.advertencias)})
+    semanal = {**tc, "list_id": lid, **idn, "rev_linea_base": rev, "modo_calculo": modo.nombre,
+               **{c: mt.get(c) for c, _ in E.METRICAS}, "n_advertencias": len(r.advertencias)}
+    motivo = None if r.lb_filas else PR.motivo_sin_linea_base(a["tipo"] for a in r.advertencias_todas)
+    out["metricas_semanales"].append(semanal | PR.derivadas_semanales(semanal, motivo))
     out["metricas_fase"] += [{**tc, "list_id": lid, **idn, **f} for f in r.resultado.fases]
     fases = P.fases_por_tarea(r.tm)
     propias: dict[str, float] = defaultdict(float)
@@ -199,7 +215,8 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
                              "hh_gastadas_acum": round(propias.get(t.id, 0.0), 6)} for t in r.tm]
     out["serie_diaria"] += [{**tc, "list_id": lid, **idn, "fecha": p.fecha,
                              "hh_prog_acum": p.programadas if r.lb_filas else None,
-                             "hh_gastadas_acum": p.gastadas, "hh_proyectadas_acum": p.proyectadas}
+                             "hh_gastadas_acum": p.gastadas, "hh_proyectadas_acum": p.proyectadas,
+                             "hh_linea_base": mt["total_hh"] if r.lb_filas else None}
                             for p in r.resultado.serie]
     out["advertencias"] += [{**a, **tc, **idn} for a in r.advertencias]
     out["linea_base"] += [f.fila() for f in r.lb_nuevas]

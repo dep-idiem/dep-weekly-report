@@ -18,7 +18,7 @@ from typing import Iterable, Sequence
 
 from dep_clickup.config import TZ
 
-from . import esquema as E
+from . import esquema as E, presentacion as PR
 
 EPOCA = dt.date(1899, 12, 30)
 FORMATO = {E.FECHA: ("DATE", "yyyy-mm-dd"), E.FECHA_HORA: ("DATE_TIME", "yyyy-mm-dd hh:mm:ss")}
@@ -157,8 +157,10 @@ def fusionar(tabla: str, existentes: Sequence[dict], nuevas: Sequence[dict], cor
 
 
 def completar(tabla: str, filas: Sequence[dict], ident: dict[str, dict]) -> list[dict]:
-    """Recalcula es_ultimo_corte en todas las filas. El codigo es la identidad estable de la lista: se
-    actualiza en todas sus filas. jp_* solo se completa si falta (filas de una version anterior del esquema)."""
+    """Recalcula es_ultimo_corte en todas las filas. El codigo es la identidad estable de la lista y las
+    columnas de presentacion salen de su nombre actual: se actualizan en todas sus filas. jp_* solo se completa
+    si falta (filas de una version anterior del esquema), igual que las columnas derivadas de metricas_semanales
+    y de advertencias (en filas antiguas el titular y el mensaje salen genericos)."""
     filas = [dict(f) for f in filas]
     if tabla in E.CON_IDENT:
         for f in filas:
@@ -167,7 +169,17 @@ def completar(tabla: str, filas: Sequence[dict], ident: dict[str, dict]) -> list
                 continue
             if f.get("codigo") is None:
                 f.update(i)
-            f["codigo"] = i["codigo"]
+            f.update({c: i[c] for c in ("codigo", *(c for c, _ in E.PRESENTACION)) if c in i})
+    if tabla == "metricas_semanales":
+        for f in filas:
+            if f.get("titular") is None:
+                f.update(PR.derivadas_semanales(f))
+    if tabla == "advertencias":
+        for f in filas:
+            if f.get("nivel") is None:
+                f["nivel"] = PR.nivel(f["tipo"])
+            if f.get("mensaje") is None:
+                f["mensaje"] = PR.mensaje(f["tipo"])
     if tabla in E.CON_TIPO_CORTE:
         for f in filas:
             f["tipo_corte"] = tipo_de(f)
