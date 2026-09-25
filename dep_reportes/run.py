@@ -28,6 +28,7 @@ from dep_clickup.models import ListInfo, Member, Task
 from dep_clickup.naming import list_code
 
 from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, presentacion as PR, proyecto as P
+from . import resolucion as RES
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
 from .config_reportes import (DRY_RUN_DIR, FOLDER_PJ_INGENIERIA, IMPORTADAS, RESPALDOS_DIR,
@@ -120,9 +121,11 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
         avisos.append(P.Aviso(P.ADV_CODIGO_DUPLICADO, "", f"El código {list_code(lista.name)} está también en: "
                                                           f"{otras}. En los reportes esta lista es {codigo}",
                               {"codigo_base": list_code(lista.name), "codigo": codigo}))
-    if not PR.partes_nombre(lista.name)[2]:
+    nombre_corto, _, con_formato = PR.partes_nombre(lista.name)
+    if not con_formato:
         avisos.append(P.Aviso(P.ADV_NOMBRE_SIN_FORMATO, "", f"El nombre \"{lista.name}\" no sigue el formato "
-                                                            "\"PJ-XXXX | nombre | cliente\": se usa el nombre sin el código"))
+                                                            "\"PJ-XXXX | nombre | cliente\": se usa el nombre sin el código",
+                              {"codigo": list_code(lista.name) or codigo, "nombre": nombre_corto}))
     if jp is None:
         det = "La lista no tiene responsable" if not (lista.assignee_id or lista.assignee_username) else \
             f"Responsable \"{lista.assignee_username}\" no se encontró entre los miembros"
@@ -160,19 +163,19 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     hpt = horas_por_tarea([h for h in horas if h.fecha <= corte], padres, acumular_en_ancestros=True)
     detector = calidad.detectar(tm, hpt, {t.id: t.time_estimate_h for t in tareas})
     nombres = {f.task_id: f.task_nombre for f in lb_filas} | {t.id: t.nombre for t in tm}
-    adv = [fila_advertencia(corte, lista.id, a.tipo, a.task_id or "", a.detalle, nombres.get(a.task_id), a.datos)
-           for a in avisos]
-    adv += [fila_advertencia(corte, lista.id, a.tipo, a.tarea_id, f"{a.tarea}: {a.detalle}", a.tarea, a.datos)
-            for a in detector]
+    etiqueta, tiene_lb = PR.etiqueta_proyecto(codigo, nombre_corto), bool(lb_filas)
+    adv = [fila_advertencia(corte, lista.id, a.tipo, a.task_id or "", a.detalle,
+                            RES.Contexto(nombres.get(a.task_id), etiqueta, tiene_lb, a.datos)) for a in avisos]
+    adv += [fila_advertencia(corte, lista.id, a.tipo, a.tarea_id, f"{a.tarea}: {a.detalle}",
+                             RES.Contexto(a.tarea, etiqueta, tiene_lb, a.datos)) for a in detector]
     con_hh = {t.id for t in tm if t.hh} | {f.task_id for f in lb_filas}
     return ResultadoLista(lista, codigo, jp, tareas, tm, horas, dec, lb_filas, nuevas, res,
                           P.para_hoja(adv, con_hh), adv)
 
 
-def fila_advertencia(corte: dt.date, list_id: str, tipo: str, task_id: str, detalle: str, tarea: str | None,
-                     datos: dict) -> dict:
+def fila_advertencia(corte: dt.date, list_id: str, tipo: str, task_id: str, detalle: str, ctx: RES.Contexto) -> dict:
     return {"corte": corte, "list_id": list_id, "tipo": tipo, "nivel": PR.nivel(tipo), "task_id": task_id,
-            "detalle": detalle, "mensaje": PR.mensaje(tipo, tarea, datos)}
+            "detalle": detalle, "mensaje": PR.mensaje(tipo, ctx.tarea, ctx.datos), **RES.resolver(tipo, ctx)}
 
 
 def identificacion(r: ResultadoLista) -> dict:

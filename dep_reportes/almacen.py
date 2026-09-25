@@ -180,6 +180,9 @@ def completar(tabla: str, filas: Sequence[dict], ident: dict[str, dict]) -> list
                 f["nivel"] = PR.nivel(f["tipo"])
             if f.get("mensaje") is None:
                 f["mensaje"] = PR.mensaje(f["tipo"])
+            if f.get("como_resolver") is None and f.get("responsable_accion") is None:
+                from .resolucion import Contexto, resolver
+                f.update(resolver(f["tipo"], Contexto(lista=f.get("proyecto"))))
     if tabla in E.CON_TIPO_CORTE:
         for f in filas:
             f["tipo_corte"] = tipo_de(f)

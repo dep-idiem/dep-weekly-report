@@ -1,0 +1,12 @@
+Hola, {jp_nombre_pila}:
+
+Te comparto el estado de tus proyectos en el reporte semanal de avance del DEP (datos al {corte}). El primer reporte oficial se publicará el {fecha_primer_reporte}. Antes de esa fecha, te pido revisar en ClickUp los puntos indicados para que tus proyectos aparezcan con su curva S y con cifras correctas.
+
+{proyectos}
+
+Puedes ver el reporte aquí: {enlace_reporte}
+
+Si tienes dudas sobre algún punto, responde este mensaje.
+
+Saludos,
+{firma}

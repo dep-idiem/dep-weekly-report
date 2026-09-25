@@ -79,7 +79,7 @@ MOTIVOS_SIN_LB = [
     ("linea_base_sin_hh", "no hay tareas con HH presupuestadas"),
     ("hh_en_padre_y_subtarea", "hay HH contadas dos veces; la línea base se congelará cuando se corrija"),
     ("tarea_1_2_no_aplica", "la tarea 1.2 está en No Aplica y la línea base se congela a mano"),
-    ("en_planificacion", "proyecto en planificación (la tarea 1.2 sigue abierta)"),
+    ("en_planificacion", "el proyecto está en planificación (la tarea 1.2 sigue abierta)"),
     ("sin_tarea_1_2", "no hay tarea 1.2 en la fase 01 y la línea base se congela a mano"),
 ]
 MOTIVO_GENERICO = "el proyecto aún no tiene línea base congelada"

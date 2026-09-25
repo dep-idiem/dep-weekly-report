@@ -46,7 +46,8 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                                                     ("hh_gastadas_acum", NUMERO), ("hh_proyectadas_acum", NUMERO),
                                                     ("hh_linea_base", NUMERO)],
     "advertencias": [("corte", FECHA)] + CORTE + [("list_id", TEXTO)] + IDENT
-                    + [("tipo", TEXTO), ("nivel", TEXTO), ("task_id", TEXTO), ("detalle", TEXTO), ("mensaje", TEXTO)],
+                    + [("tipo", TEXTO), ("nivel", TEXTO), ("task_id", TEXTO), ("detalle", TEXTO), ("mensaje", TEXTO),
+                       ("como_resolver", TEXTO), ("responsable_accion", TEXTO), ("impacto", TEXTO)],
     "ejecuciones": [("ejecutado_en", FECHA_HORA), ("corte", FECHA), ("tipo_corte", TEXTO), ("modo", TEXTO),
                     ("n_proyectos", ENTERO),
                     ("n_lineas_base_nuevas", ENTERO), ("resultado", TEXTO), ("detalle_error", TEXTO)],

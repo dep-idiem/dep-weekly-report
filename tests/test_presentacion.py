@@ -47,15 +47,15 @@ def test_titular_bajo_sobre_y_en_linea():
 
 
 def test_titular_sin_linea_base():
-    assert PR.titular(False, 0.7, None, "proyecto en planificación (la tarea 1.2 sigue abierta)") == \
-        "Sin curva programada: proyecto en planificación (la tarea 1.2 sigue abierta)."
+    assert PR.titular(False, 0.7, None, "el proyecto está en planificación (la tarea 1.2 sigue abierta)") == \
+        "Sin curva programada: el proyecto está en planificación (la tarea 1.2 sigue abierta)."
     assert PR.titular(False, None, None) == f"Sin curva programada: {PR.MOTIVO_GENERICO}."
 
 
 def test_motivo_sin_linea_base_por_prioridad():
     assert PR.motivo_sin_linea_base(["tarea_1_2_no_aplica", "hh_en_padre_y_subtarea"]).startswith("hay HH contadas dos veces")
     assert PR.motivo_sin_linea_base(["sin_tarea_1_2", "linea_base_sin_hh"]) == "no hay tareas con HH presupuestadas"
-    assert PR.motivo_sin_linea_base(["en_planificacion", "avance_sin_horas"]).startswith("proyecto en planificación")
+    assert PR.motivo_sin_linea_base(["en_planificacion", "avance_sin_horas"]).startswith("el proyecto está en planificación")
     assert PR.motivo_sin_linea_base([]) == PR.MOTIVO_GENERICO
 
 

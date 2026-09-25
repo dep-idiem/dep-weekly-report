@@ -1,3 +1,7 @@
 {
-  "retencion_preliminar_dias": 15
+  "retencion_preliminar_dias": 15,
+  "responsable_administracion": "Administración DEP",
+  "enlace_reporte": "",
+  "fecha_primer_reporte_oficial": "2026-09-28",
+  "plantilla_mensaje_jp": "config/plantilla_mensaje_jp.txt"
 }
