@@ -135,3 +135,101 @@ def test_completar_rellena_presentacion_en_filas_antiguas():
     adv = A.completar("advertencias", [{"corte": dt.date(2026, 9, 13), "list_id": "901", "tipo": "avance_sin_horas"}],
                       ident)[0]
     assert adv["nivel"] == "tarea" and adv["mensaje"] == "Una tarea tiene avance pero no tiene horas registradas"
+
+
+# --- Deltas, semaforo y vencimientos ------------------------------------------------------------
+
+def _ms(corte, tipo="oficial", lid="901", **kw):
+    base = {"corte": corte, "tipo_corte": tipo, "list_id": lid, "tiene_linea_base": True}
+    return base | kw
+
+
+def test_semaforo_umbrales():
+    u = PR.UmbralesSemaforo()
+    f = lambda d, usado, real=0.5: PR.semaforo({"tiene_linea_base": True, "desviacion_pts": d,
+                                                "pct_presupuesto_usado": usado, "avance_real": real}, u)
+    assert f(-3.0, 0.60) == "verde"             # justo en el limite de desviacion y de margen (50 % + 10 pts)
+    assert f(0.0, 0.61) == "ambar"              # gasta mas que avance + 10 pts
+    assert f(-3.1, 0.40) == "ambar"
+    assert f(-10.0, 0.40) == "ambar"            # -10 es ambar; rojo es < -10
+    assert f(-10.1, 0.40) == "rojo"
+    assert f(5.0, 1.01) == "rojo"               # presupuesto superado
+    assert f(5.0, 1.0, 1.0) == "verde"          # 100 % usado con 100 % de avance no es superado
+    assert PR.semaforo({"tiene_linea_base": False, "desviacion_pts": 0, "pct_presupuesto_usado": 0,
+                        "avance_real": 0}) == "sin_dato"
+    assert PR.semaforo({"tiene_linea_base": True, "desviacion_pts": None, "pct_presupuesto_usado": 0.1,
+                        "avance_real": 0.2}) == "sin_dato"
+    estricto = PR.UmbralesSemaforo(verde_desviacion_min_pts=0.0)
+    assert PR.semaforo({"tiene_linea_base": True, "desviacion_pts": -1.0, "pct_presupuesto_usado": 0.4,
+                        "avance_real": 0.5}, estricto) == "ambar"
+
+
+def test_deltas_frente_al_corte_oficial_anterior():
+    d13, d20, d22, d27 = dt.date(2026, 9, 13), dt.date(2026, 9, 20), dt.date(2026, 9, 22), dt.date(2026, 9, 27)
+    filas = [_ms(d20, avance_real=0.30, avance_prog=0.40, desviacion_pts=-10.0, hh_gastadas_acum=100.0),
+             _ms(d13, avance_real=0.20, avance_prog=None, desviacion_pts=None, hh_gastadas_acum=80.0),
+             _ms(d22, "preliminar", avance_real=0.35, avance_prog=0.45, desviacion_pts=-10.0, hh_gastadas_acum=110.0),
+             _ms(d27, avance_real=0.45, avance_prog=0.50, desviacion_pts=-5.0, hh_gastadas_acum=130.0),
+             _ms(d27, lid="902", avance_real=0.1, avance_prog=0.1, desviacion_pts=0.0, hh_gastadas_acum=5.0)]
+    out = {(f["list_id"], f["corte"], f["tipo_corte"]): f for f in PR.comparativas_semanales(filas)}
+    primero = out[("901", d13, "oficial")]
+    assert all(primero[c] is None for c in PR.DELTAS)                      # sin corte anterior
+    s20 = out[("901", d20, "oficial")]
+    assert s20["delta_avance_real"] == pytest.approx(0.10) and s20["delta_hh_gastadas"] == 20.0
+    assert s20["delta_avance_prog"] is None and s20["delta_desviacion_pts"] is None   # el 13 no tenia programado
+    # la preliminar se compara con la oficial anterior (20), no con otra preliminar; la oficial del 27 tambien
+    assert out[("901", d22, "preliminar")]["delta_hh_gastadas"] == 10.0
+    s27 = out[("901", d27, "oficial")]
+    assert s27["delta_avance_real"] == pytest.approx(0.15) and s27["delta_desviacion_pts"] == 5.0
+    assert s27["delta_hh_gastadas"] == 30.0
+    assert all(out[("902", d27, "oficial")][c] is None for c in PR.DELTAS)  # otro proyecto sin historia
+    assert out[("901", d20, "oficial")]["semaforo"] == "sin_dato"      # falta pct_presupuesto_usado
+
+
+def test_completar_recalcula_deltas_y_semaforo_en_todas_las_filas():
+    d20, d27 = dt.date(2026, 9, 20), dt.date(2026, 9, 27)
+    filas = [_ms(d20, rev_linea_base=0, avance_real=0.5, avance_prog=0.5, hh_gastadas_acum=50.0, total_hh=100.0,
+                 titular="x", desviacion_pts=0.0, pct_presupuesto_usado=0.5),
+             _ms(d27, rev_linea_base=0, avance_real=0.6, avance_prog=0.75, hh_gastadas_acum=90.0, total_hh=100.0,
+                 titular="x", desviacion_pts=-15.0, pct_presupuesto_usado=0.9, delta_avance_real=99.0)]
+    out = A.completar("metricas_semanales", filas, {}, PR.UmbralesSemaforo())
+    assert [f["semaforo"] for f in out] == ["verde", "rojo"]
+    assert out[1]["delta_avance_real"] == pytest.approx(0.1) and out[1]["delta_hh_gastadas"] == 40.0
+    assert out[1]["delta_desviacion_pts"] == -15.0
+
+
+@pytest.mark.parametrize("due, pendiente, esperado", [
+    (dt.date(2026, 9, 20), True, (7, None)),       # vencida hace 7 dias
+    (dt.date(2026, 9, 20), False, (None, None)),   # cerrada o No Aplica: nada
+    (dt.date(2026, 9, 27), True, (None, 0)),       # vence el dia del corte
+    (dt.date(2026, 10, 11), True, (None, 14)),     # borde del horizonte
+    (dt.date(2026, 10, 12), True, (None, None)),   # fuera del horizonte
+    (dt.date(2026, 10, 1), False, (None, None)),
+    (None, True, (None, None)),
+])
+def test_vencimientos(due, pendiente, esperado):
+    v = PR.vencimientos(dt.date(2026, 9, 27), due, pendiente, 14)
+    assert (v["dias_atraso"], v["vence_en_dias"]) == esperado
+
+
+def test_columnas_nuevas_en_el_esquema():
+    ms = E.columnas("metricas_semanales")
+    assert ms.index("hh_estimadas_termino_plan_semanal") == ms.index("hh_estimadas_al_termino") + 1
+    assert {"delta_avance_real", "delta_avance_prog", "delta_desviacion_pts", "delta_hh_gastadas", "semaforo"} <= set(ms)
+    assert {"dias_atraso", "vence_en_dias"} <= set(E.columnas("fotos_tareas"))
+
+
+@pytest.mark.parametrize("entrega, esperado", [
+    (None, None),
+    (dt.date(2026, 9, 27), 0),        # entrega el dia del corte (domingo)
+    (dt.date(2026, 9, 28), 1),        # lunes siguiente
+    (dt.date(2026, 10, 2), 5),        # viernes: lunes a viernes
+    (dt.date(2026, 10, 9), 9),        # dos semanas (10 habiles) menos el feriado del lunes 5-10
+    (dt.date(2026, 9, 25), -1),       # viernes antes del corte: vencido hace 1 dia habil
+    (dt.date(2026, 9, 26), -1),       # sabado: vencido, nunca 0
+    (dt.date(2026, 9, 21), -5),       # lunes de la semana del corte
+])
+def test_dias_habiles_para_entrega(entrega, esperado):
+    from dep_reportes.calendario import Calendario
+    cal = Calendario(frozenset({dt.date(2026, 10, 5)}))        # un feriado ficticio
+    assert PR.dias_habiles_para_entrega(dt.date(2026, 9, 27), entrega, cal) == esperado

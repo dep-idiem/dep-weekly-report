@@ -35,6 +35,7 @@ from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados
 from .config_reportes import (DRY_RUN_DIR, FOLDER_PJ_INGENIERIA, IMPORTADAS, RESPALDOS_DIR,
                               RETENCION_PRELIMINAR_DIAS, SHEETS_REPORTES_ID, TIME_ENTRIES_DESDE, TIMETRACKER_LIST_ID,
                               UMBRAL_HORAS_ADMINISTRACION, MINIMO_HORAS_ADMINISTRACION, PROYECCION,
+                              HORIZONTE_VENCIMIENTOS_DIAS,
                               cortes_historicos, presupuestos)
 from .metricas import Horas, TareaMetrica
 from .modos import Modo, por_nombre
@@ -280,7 +281,10 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
     })
     tc = {"corte": corte, "tipo_corte": tipo_corte}
     semanal = {**tc, "list_id": lid, **idn, "rev_linea_base": rev, "modo_calculo": modo.nombre,
-               **{c: mt.get(c) for c, _ in E.METRICAS}, "n_advertencias": len(r.advertencias), **r.presupuesto}
+               **{c: mt.get(c) for c, _ in E.METRICAS}, "n_advertencias": len(r.advertencias), **r.presupuesto,
+               "hh_estimadas_termino_plan_semanal": r.extra.get("hh_estimadas_plan_semanal"),
+               "dias_habiles_para_entrega": PR.dias_habiles_para_entrega(
+                   corte, r.lista.due.date() if r.lista.due else None, modo.cal)}
     motivo = None if r.lb_filas else PR.motivo_sin_linea_base(a["tipo"] for a in r.advertencias_todas)
     out["metricas_semanales"].append(semanal | PR.derivadas_semanales(semanal, motivo))
     out["metricas_fase"] += [{**tc, "list_id": lid, **idn, **f} for f in r.resultado.fases]
@@ -290,12 +294,15 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
         if h.fecha <= corte:
             propias[h.tarea_id] += h.horas
     fotos = tipo_corte == E.OFICIAL          # historial semanal: solo corridas oficiales
+    por_id = {t.id: t for t in r.tareas}
+    pendiente = lambda t: not (P.es_no_aplica(t) or (t.id in por_id and por_id[t.id].cerrada))
     out["fotos_tareas"] += [] if not fotos else [{"corte": corte, "list_id": lid, "task_id": t.id, "parent_id": t.parent or "",
                              "task_nombre": t.nombre, "fase": fases[t.id], "estado": t.estado or "", "hh": t.hh,
                              "start": t.start, "due": t.due, "avance_real": t.avance,
                              "hh_gastadas_acum": round(propias.get(t.id, 0.0), 6),
                              "tipo_tarea": r.clases[t.id].tipo if t.id in r.clases else None,
-                             "origen_avance": r.origen_avance.get(t.id)} for t in r.tm]
+                             "origen_avance": r.origen_avance.get(t.id),
+                             **PR.vencimientos(corte, t.due, pendiente(t), HORIZONTE_VENCIMIENTOS_DIAS)} for t in r.tm]
     if any(f["hh_planificadas"] or f["hh_registradas"] for f in r.plan_semanal):
         out["plan_semanal"] += [{**tc, "list_id": lid, **{k: idn[k] for k in ("codigo", "proyecto", "jp_nombre", "jp_email")},
                                  **f} for f in r.plan_semanal]

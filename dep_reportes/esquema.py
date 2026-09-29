@@ -23,7 +23,8 @@ CORTE = [("tipo_corte", TEXTO), ("es_ultimo_corte", BOOLEANO), ("es_ultimo_ofici
 METRICAS = [("total_hh", NUMERO), ("hh_prog_acum", NUMERO), ("hh_gastadas_acum", NUMERO), ("hh_historicas", NUMERO),
             ("avance_prog", NUMERO),
             ("avance_real", NUMERO), ("ev", NUMERO), ("spi", NUMERO), ("cpi", NUMERO),
-            ("hh_estimadas_al_termino", NUMERO), ("hh_actuales_clickup", NUMERO)]
+            ("hh_estimadas_al_termino", NUMERO), ("hh_estimadas_termino_plan_semanal", NUMERO),
+            ("hh_actuales_clickup", NUMERO)]
 
 TABLAS: dict[str, list[tuple[str, str]]] = {
     "proyectos": [("list_id", TEXTO), ("codigo", TEXTO)] + PRESENTACION + [("nombre", TEXTO), ("jp_nombre", TEXTO),
@@ -39,14 +40,18 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                              ("n_advertencias", ENTERO)]
                           # Presupuesto contractual (presupuesto.py)
                           + [("hh_contrato", NUMERO), ("pct_contrato_usado", NUMERO), ("ritmo_semanal", NUMERO),
-                             ("semanas_restantes_al_ritmo", NUMERO), ("fecha_agotamiento_estimada", FECHA)],
+                             ("semanas_restantes_al_ritmo", NUMERO), ("fecha_agotamiento_estimada", FECHA)]
+                          # Presentacion (presentacion.py): dias habiles para la entrega, deltas frente al corte oficial anterior y semaforo
+                          + [("dias_habiles_para_entrega", ENTERO), ("delta_avance_real", NUMERO), ("delta_avance_prog", NUMERO),
+                             ("delta_desviacion_pts", NUMERO), ("delta_hh_gastadas", NUMERO), ("semaforo", TEXTO)],
     "metricas_fase": [("corte", FECHA)] + CORTE + [("list_id", TEXTO)] + IDENT
                      + [("fase", TEXTO), ("hh_linea_base", NUMERO), ("hh_prog_acum", NUMERO),
                         ("hh_gastadas_acum", NUMERO), ("avance_real", NUMERO)],
     "fotos_tareas": [("corte", FECHA), ("list_id", TEXTO), ("task_id", TEXTO), ("parent_id", TEXTO),
                      ("task_nombre", TEXTO), ("fase", TEXTO), ("estado", TEXTO), ("hh", NUMERO), ("start", FECHA),
                      ("due", FECHA), ("avance_real", NUMERO), ("hh_gastadas_acum", NUMERO),
-                     ("tipo_tarea", TEXTO), ("origen_avance", TEXTO)],
+                     ("tipo_tarea", TEXTO), ("origen_avance", TEXTO),
+                     ("dias_atraso", ENTERO), ("vence_en_dias", ENTERO)],
     "serie_diaria": [("corte", FECHA), ("tipo_corte", TEXTO), ("list_id", TEXTO)] + IDENT
                     + [("fecha", FECHA), ("hh_prog_acum", NUMERO),
                                                     ("hh_gastadas_acum", NUMERO), ("hh_proyectadas_acum", NUMERO),

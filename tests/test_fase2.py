@@ -244,7 +244,9 @@ def test_ida_y_vuelta_de_valores():
             "modo_calculo": "dep", **{c: 1.5 for c, _ in E.METRICAS}, "desviacion_pts": -1.1,
             "pct_presupuesto_usado": 0.4, "titular": "Avance real 73,2 % frente a 74,3 % programado: 1,1 puntos bajo el plan.",
             "n_advertencias": 3, "hh_contrato": 3000.0, "pct_contrato_usado": 0.81, "ritmo_semanal": 40.0,
-            "semanas_restantes_al_ritmo": 14.5, "fecha_agotamiento_estimada": D(2027, 1, 12)}
+            "semanas_restantes_al_ritmo": 14.5, "fecha_agotamiento_estimada": D(2027, 1, 12),
+            "dias_habiles_para_entrega": 12, "delta_avance_real": 0.021, "delta_avance_prog": 0.03, "delta_desviacion_pts": -0.9,
+            "delta_hh_gastadas": 41.5, "semaforo": "verde"}
     ti = E.tipos("metricas_semanales")
     valores = [E.columnas("metricas_semanales"), [A.celda_sheets(fila[c], ti[c]) for c in E.columnas("metricas_semanales")]]
     assert A.filas_desde_valores("metricas_semanales", valores) == [fila]

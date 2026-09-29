@@ -1,12 +1,13 @@
 """Columnas de presentacion para Looker Studio: nombre corto, cliente, etiqueta del proyecto, titular de
-avance y mensajes de advertencia en español. Funciones puras.
+avance, deltas semanales, semaforo, vencimientos de tareas y mensajes de advertencia en español. Funciones puras.
 
 Numeros con coma decimal; fechas dd-mm-aaaa.
 """
 from __future__ import annotations
 
 import datetime as dt
-from typing import Mapping
+from dataclasses import dataclass
+from typing import Mapping, Sequence
 
 from dep_clickup.naming import list_code
 
@@ -127,6 +128,85 @@ def derivadas_semanales(fila: Mapping, motivo: str | None = None) -> dict:
         "pct_presupuesto_usado": pct_presupuesto_usado(fila.get("hh_gastadas_acum"), fila.get("total_hh")) if tiene else None,
         "titular": titular(tiene, fila.get("avance_real"), fila.get("avance_prog"), motivo, fila),
     }
+
+
+def dias_habiles_para_entrega(corte: dt.date, entrega: dt.date | None, cal) -> int | None:
+    """Dias habiles entre el corte y la fecha de termino vigente (vencimiento de la lista en ClickUp), con el
+    calendario del modo (lunes a viernes sin feriados de Chile ni dias no habiles de IDIEM).
+
+    - entrega >= corte: habiles de corte + 1 a entrega, ambos incluidos (0 = se entrega el dia del corte).
+    - entrega < corte (vencido): negativo, habiles de entrega a corte - 1; como minimo -1, para que un vencido
+      nunca se lea como 0 (p. ej. entrega un sabado y corte el domingo).
+    - sin fecha de termino: vacio."""
+    if entrega is None:
+        return None
+    if entrega >= corte:
+        return cal.networkdays(corte + dt.timedelta(days=1), entrega) if entrega > corte else 0
+    return -max(1, cal.networkdays(entrega, corte - dt.timedelta(days=1)))
+
+
+# Deltas frente al corte oficial anterior: columna del delta -> columna de origen.
+DELTAS = {"delta_avance_real": "avance_real", "delta_avance_prog": "avance_prog",
+          "delta_desviacion_pts": "desviacion_pts", "delta_hh_gastadas": "hh_gastadas_acum"}
+VERDE, AMBAR, ROJO, SIN_DATO = "verde", "ambar", "rojo", "sin_dato"
+
+
+@dataclass(frozen=True)
+class UmbralesSemaforo:
+    """Umbrales del semaforo (config/reportes.json, clave "semaforo"). Desviacion y margen en puntos; el
+    presupuesto usado como fraccion de las HH de la linea base."""
+    verde_desviacion_min_pts: float = -3.0
+    verde_margen_presupuesto_pts: float = 10.0
+    rojo_desviacion_pts: float = -10.0
+    rojo_presupuesto_usado: float = 1.0
+
+
+def semaforo(fila: Mapping, u: UmbralesSemaforo = UmbralesSemaforo()) -> str:
+    """rojo: desviacion < -10 pts o presupuesto superado (usado > 100 %); verde: desviacion >= -3 pts y usado <=
+    avance real + 10 pts; ambar: el resto. Sin linea base (o sin los datos para decidir): sin_dato."""
+    d, usado, real = fila.get("desviacion_pts"), fila.get("pct_presupuesto_usado"), fila.get("avance_real")
+    if not fila.get("tiene_linea_base") or d is None or usado is None or real is None:
+        return SIN_DATO
+    if d < u.rojo_desviacion_pts or usado > u.rojo_presupuesto_usado:
+        return ROJO
+    if d >= u.verde_desviacion_min_pts and usado * 100 <= real * 100 + u.verde_margen_presupuesto_pts:
+        return VERDE
+    return AMBAR
+
+
+def comparativas_semanales(filas: Sequence[Mapping], u: UmbralesSemaforo = UmbralesSemaforo()) -> list[dict]:
+    """Deltas de cada fila de metricas_semanales frente a la fila oficial del mismo proyecto con el corte
+    inmediatamente anterior (vacios si no la hay o si falta alguno de los dos valores) y semaforo."""
+    oficiales: dict[str, list[Mapping]] = {}
+    for f in filas:
+        if (f.get("tipo_corte") or "oficial") == "oficial" and f.get("corte"):
+            oficiales.setdefault(f.get("list_id"), []).append(f)
+    out = []
+    for f in filas:
+        f = dict(f)
+        previas = [o for o in oficiales.get(f.get("list_id"), []) if o["corte"] < f["corte"]] if f.get("corte") else []
+        prev = max(previas, key=lambda o: o["corte"]) if previas else None
+        for col, origen in DELTAS.items():
+            a, b = f.get(origen), (prev or {}).get(origen)
+            f[col] = round(a - b, 6) if a is not None and b is not None else None
+        f["semaforo"] = semaforo(f, u)
+        out.append(f)
+    return out
+
+
+# --- fotos_tareas -------------------------------------------------------------------------------
+
+def vencimientos(corte: dt.date, due: dt.date | None, pendiente: bool, horizonte_dias: int = 14) -> dict:
+    """dias_atraso: la tarea vencio antes del corte y no esta cerrada; vence_en_dias: vence entre el corte y
+    corte + horizonte (0 = vence el dia del corte) y no esta cerrada. Cerrada = estado de tipo cerrado o No Aplica."""
+    atraso = vence = None
+    if due is not None and pendiente:
+        dias = (due - corte).days
+        if dias < 0:
+            atraso = -dias
+        elif dias <= horizonte_dias:
+            vence = dias
+    return {"dias_atraso": atraso, "vence_en_dias": vence}
 
 
 # --- Advertencias -------------------------------------------------------------------------------

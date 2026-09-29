@@ -157,9 +157,11 @@ def fusionar(tabla: str, existentes: Sequence[dict], nuevas: Sequence[dict], cor
     raise KeyError(tabla)
 
 
-def completar(tabla: str, filas: Sequence[dict], ident: dict[str, dict]) -> list[dict]:
-    """Recalcula es_ultimo_corte en todas las filas. El codigo es la identidad estable de la lista y las
-    columnas de presentacion salen de su nombre actual: se actualizan en todas sus filas. jp_* solo se completa
+def completar(tabla: str, filas: Sequence[dict], ident: dict[str, dict],
+              umbrales: PR.UmbralesSemaforo | None = None) -> list[dict]:
+    """Recalcula es_ultimo_corte en todas las filas, y en metricas_semanales los deltas frente al corte oficial
+    anterior y el semaforo (umbrales: por defecto los de config/reportes.json). El codigo es la identidad estable
+    de la lista y las columnas de presentacion salen de su nombre actual: se actualizan en todas sus filas. jp_* solo se completa
     si falta (filas de una version anterior del esquema), igual que las columnas derivadas de metricas_semanales
     y de advertencias (en filas antiguas el titular y el mensaje salen genericos)."""
     filas = [dict(f) for f in filas]
@@ -175,6 +177,11 @@ def completar(tabla: str, filas: Sequence[dict], ident: dict[str, dict]) -> list
         for f in filas:
             if f.get("titular") is None:
                 f.update(PR.derivadas_semanales(f))
+    if tabla == "metricas_semanales":
+        if umbrales is None:
+            from .config_reportes import UMBRALES_SEMAFORO
+            umbrales = PR.UmbralesSemaforo(**UMBRALES_SEMAFORO)
+        filas = PR.comparativas_semanales(filas, umbrales)
     if tabla == "advertencias":
         for f in filas:
             if f.get("nivel") is None:

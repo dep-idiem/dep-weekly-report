@@ -29,6 +29,9 @@ UMBRAL_HORAS_ADMINISTRACION = float(parametros().get("umbral_horas_administracio
 MINIMO_HORAS_ADMINISTRACION = float(parametros().get("minimo_horas_administracion", 20))
 # Fase 2b: "uniforme" (reparto de las HH pendientes) o "plan_semanal" (time estimates de las porciones futuras)
 PROYECCION = parametros().get("proyeccion", "uniforme")
+# Presentacion: umbrales del semaforo (presentacion.UmbralesSemaforo) y horizonte de "vence en" de fotos_tareas
+UMBRALES_SEMAFORO = dict(parametros().get("semaforo") or {})
+HORIZONTE_VENCIMIENTOS_DIAS = int(parametros().get("horizonte_vencimientos_dias", 14))
 
 
 def presupuestos() -> dict[str, float]:

@@ -10,5 +10,12 @@
     "PJ-2025.0019": "2026-07-20"
   },
   "minimo_horas_administracion": 20,
-  "proyeccion": "uniforme"
+  "proyeccion": "uniforme",
+  "semaforo": {
+    "verde_desviacion_min_pts": -3,
+    "verde_margen_presupuesto_pts": 10,
+    "rojo_desviacion_pts": -10,
+    "rojo_presupuesto_usado": 1.0
+  },
+  "horizonte_vencimientos_dias": 14
 }
