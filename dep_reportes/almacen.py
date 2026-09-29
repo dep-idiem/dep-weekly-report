@@ -154,6 +154,10 @@ def fusionar(tabla: str, existentes: Sequence[dict], nuevas: Sequence[dict], cor
         return list(existentes) + [f for f in nuevas if (f["list_id"], f["rev"], f["task_id"]) not in claves]
     if tabla == "ejecuciones":
         return list(existentes) + list(nuevas)
+    if tabla in E.POR_LISTA:
+        # cierres: una fila por lista; solo corridas oficiales (las listas que volvieron a PJ Ingenieria las quita run)
+        from .finalizados import fusionar_cierres
+        return fusionar_cierres(existentes, nuevas, (), tipo_corte == E.OFICIAL)
     raise KeyError(tabla)
 
 
@@ -173,6 +177,12 @@ def completar(tabla: str, filas: Sequence[dict], ident: dict[str, dict],
             if f.get("codigo") is None:
                 f.update(i)
             f.update({c: i[c] for c in ("codigo", *(c for c, _ in E.PRESENTACION)) if c in i})
+    if tabla in E.CON_ESTADO:
+        # estado_proyecto sigue a la lista: al finalizar, todo su historial queda como finalizado (filtro de Looker).
+        for f in filas:
+            i = ident.get(f.get("list_id"))
+            if i is not None and i.get("estado_proyecto"):
+                f["estado_proyecto"] = i["estado_proyecto"]
     if tabla == "metricas_semanales":
         for f in filas:
             if f.get("titular") is None:

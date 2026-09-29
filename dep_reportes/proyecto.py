@@ -49,6 +49,7 @@ ADV_PRESUPUESTO_POR_AGOTARSE = "presupuesto_por_agotarse"
 ADV_CUMPLIMIENTO = "cumplimiento_semanal_fuera_de_rango"
 ADV_PAQUETE_DESAPARECIDO = "paquete_desaparecido"
 ADV_FASE_CON_HH = "fase_con_hh"
+ADV_PROYECTO_FINALIZADO = "proyecto_finalizado"     # la lista esta en Proyectos Finalizados (finalizados.py)
 
 # Advertencias de nivel proyecto: se escriben siempre en la hoja (decision 2 de la fase 2). Las demas solo
 # si son de una tarea con HH Presupuestadas; el detalle completo queda en calidad_datos.md.
@@ -57,6 +58,7 @@ NIVEL_PROYECTO = {
     ADV_TERMINO_VENCIDO, ADV_SIN_TERMINO, ADV_HH_CAMBIARON, ADV_LB_SIN_HH, ADV_LB_TARDIA, ADV_CODIGO_DUPLICADO,
     ADV_NOMBRE_SIN_FORMATO, ADV_HORAS_ADMIN, ADV_FUERA_DE_PLAZO, ADV_FASE_OTRO_PROYECTO, ADV_TT_SIN_CLICKUP,
     ADV_LISTA_COMBINADA, ADV_SIN_PRESUPUESTO, ADV_PRESUPUESTO_POR_AGOTARSE, ADV_CUMPLIMIENTO, ADV_PAQUETE_DESAPARECIDO,
+    ADV_PROYECTO_FINALIZADO,
     "hh_en_padre_y_subtarea",   # doble conteo (calidad.DOBLE_CONTEO)
 }
 # De nivel tarea, pero se escriben aunque la tarea no tenga HH Presupuestadas.

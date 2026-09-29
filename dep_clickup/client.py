@@ -125,6 +125,10 @@ class ClickUpClient:
                 out.append(parse_list(l, folder_id, archived))
         return out
 
+    def list_lists_folders(self, folder_ids: Iterable[str], include_archived: bool = False) -> list[ListInfo]:
+        """Listas de varios folders, en ese orden; cada ListInfo lleva su folder_id."""
+        return [l for f in folder_ids for l in self.list_lists(f, include_archived)]
+
     def get_list(self, list_id: str) -> dict:
         return self.get(f"/list/{list_id}")
 
@@ -196,6 +200,23 @@ class ClickUpClient:
             if v:
                 params[k] = v
         return self.get(f"/team/{team_id}/time_entries", params).get("data", [])
+
+    def list_time_entries_raw_folders(self, start: dt.date, end: dt.date, folder_ids: Iterable[str],
+                                      assignees: Iterable[int] | None = None,
+                                      team_id: str | None = None) -> list[dict]:
+        """Como list_time_entries_raw con folder_id, para varios folders (ClickUp acepta uno por peticion).
+        Una entrada pertenece al folder donde esta hoy su lista; si aparece dos veces se deja la primera."""
+        team_id = team_id or self.get_team_id()
+        if assignees is None:
+            assignees = [m.id for m in self.list_members(team_id)]
+        assignees = list(assignees)
+        out, vistos = [], set()
+        for f in folder_ids:
+            for e in self.list_time_entries_raw(start, end, assignees=assignees, team_id=team_id, folder_id=f):
+                if e.get("id") not in vistos:
+                    vistos.add(e.get("id"))
+                    out.append(e)
+        return out
 
 
 def parse_list(l: dict, folder_id: str | None = None, archived: bool = False) -> ListInfo:

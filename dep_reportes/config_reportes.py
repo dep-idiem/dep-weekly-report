@@ -9,6 +9,8 @@ from pathlib import Path
 from dep_clickup.config import ROOT  # carga .env
 
 FOLDER_PJ_INGENIERIA = "901316452800"
+# Espacio Proyectos Activos: los proyectos que terminan se mueven de PJ Ingenieria a este folder (finalizados.py).
+FOLDER_PROYECTOS_FINALIZADOS = "901318475416"
 SHEETS_REPORTES_ID = os.getenv("SHEETS_REPORTES_ID", "")
 DRY_RUN_DIR = ROOT / "reportes" / "dry_run"
 RESPALDOS_DIR = ROOT / "reportes" / "respaldos"

@@ -1,11 +1,23 @@
 # Reportes semanales DEP
 
-Lee los proyectos del folder **PJ Ingeniería** de ClickUp (solo lectura), congela líneas base, calcula la curva S y las métricas de avance, y las escribe en la hoja de Google Sheets **"DEP - Reportes"**, que alimenta el reporte de Looker Studio.
+Lee los proyectos de los folders **PJ Ingeniería** (en curso) y **Proyectos Finalizados** del espacio Proyectos Activos de ClickUp (solo lectura), congela líneas base, calcula la curva S y las métricas de avance, y las escribe en la hoja de Google Sheets **"DEP - Reportes"**, que alimenta el reporte de Looker Studio.
 
 - **Oficial (semanal):** lunes 04:00 (hora de Santiago), corte = domingo anterior. Queda en el historial.
 - **Preliminar (diaria):** martes a domingo 19:00, fecha de control = día anterior. Se conservan las preliminares de los últimos 15 días (`config/reportes.json`); la oficial borra las preliminares con corte hasta su domingo.
 
 Cero escrituras en ClickUp. En la hoja no hay datos por persona, salvo el nombre y correo del JP de cada proyecto.
+
+## Proyectos finalizados
+
+Al terminar, la lista de un proyecto se mueve de PJ Ingeniería a Proyectos Finalizados (`dep_reportes/finalizados.py`). La lista conserva `list_id`, código y línea base, y queda con `estado_proyecto = finalizado` en `proyectos` y en todas sus filas de las demás pestañas, también las antiguas.
+
+- **Cambio de folder** (estaba en curso en un corte anterior): en el corte en que cambia se escriben sus métricas semanales, la advertencia informativa `proyecto_finalizado` y su fila en la pestaña **`cierres`**. Desde el corte siguiente queda congelada: sin filas semanales nuevas y con la serie diaria del corte de cierre.
+- **Incorporado ya finalizado** (nunca se vio en curso): solo la fila de `proyectos`, la de `cierres` y la advertencia. No se inventan semanas que no se observaron.
+- `cierres`: una fila por proyecto, solo en corridas oficiales. Contiene las HH gastadas totales (con el saldo del Timetracker), frente a la línea base y frente al contrato; el avance final; y la duración real (del inicio a la última hora registrada) frente a la contractual (entrega de la línea base o, si falta, el vencimiento de la lista), en días hábiles.
+- Si la lista vuelve a PJ Ingeniería, en el siguiente corte oficial vuelve a quedar en curso y su cierre se borra.
+- Las listas de Proyectos Finalizados sin código `PJ-`/`PR-` no entran. Las listas que tienen filas en la hoja pero ya no están en ninguno de los dos folders quedan con `estado_proyecto = fuera_de_folders`.
+
+**Looker Studio:** en las tablas y gráficos de proyectos en curso, agregar el filtro `estado_proyecto = en_curso` (además de `es_ultimo_corte` o `es_ultimo_oficial`, como hoy). Los cierres se muestran desde la pestaña `cierres`.
 
 ## Estructura
 

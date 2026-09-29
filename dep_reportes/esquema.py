@@ -10,7 +10,10 @@ TEXTO, NUMERO, ENTERO, FECHA, FECHA_HORA, BOOLEANO = "texto", "numero", "entero"
 # Identificacion del proyecto repetida en las tablas de hechos, para filtrar en Looker Studio sin uniones.
 # nombre_corto, cliente y proyecto ("<codigo sin PJ-> · <nombre_corto>") son de presentacion (presentacion.py).
 PRESENTACION = [("nombre_corto", TEXTO), ("cliente", TEXTO), ("proyecto", TEXTO)]
-IDENT = [("codigo", TEXTO)] + PRESENTACION + [("jp_nombre", TEXTO), ("jp_email", TEXTO)]
+# estado_proyecto: "en_curso" (folder PJ Ingenieria) o "finalizado" (folder Proyectos Finalizados; finalizados.py).
+# Se actualiza en todas las filas de la lista, tambien las antiguas: es el filtro de Looker para proyectos en curso.
+ESTADO = [("estado_proyecto", TEXTO)]
+IDENT = [("codigo", TEXTO)] + PRESENTACION + [("jp_nombre", TEXTO), ("jp_email", TEXTO)] + ESTADO
 
 # Tipo de corrida y banderas (fase 3):
 # - tipo_corte: "oficial" (semanal, corte domingo, queda en el historial) o "preliminar" (diaria, se sobrescribe).
@@ -30,7 +33,8 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
     "proyectos": [("list_id", TEXTO), ("codigo", TEXTO)] + PRESENTACION + [("nombre", TEXTO), ("jp_nombre", TEXTO),
                   ("jp_email", TEXTO),
                   ("estado_lista", TEXTO), ("fecha_inicio", FECHA), ("fecha_termino_vigente", FECHA),
-                  ("estado_linea_base", TEXTO), ("rev_vigente", ENTERO), ("actualizado_en", FECHA_HORA)],
+                  ("estado_linea_base", TEXTO), ("rev_vigente", ENTERO), ("actualizado_en", FECHA_HORA)]
+                 + ESTADO + [("corte_cierre", FECHA)],
     "linea_base": [("list_id", TEXTO), ("rev", ENTERO), ("tipo", TEXTO), ("fecha_captura", FECHA_HORA), ("motivo", TEXTO),
                    ("fecha_inicio", FECHA), ("fecha_entrega_contractual", FECHA), ("task_id", TEXTO),
                    ("task_nombre", TEXTO), ("fase", TEXTO), ("hh", NUMERO), ("start", FECHA), ("due", FECHA)],
@@ -51,7 +55,7 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                      ("task_nombre", TEXTO), ("fase", TEXTO), ("estado", TEXTO), ("hh", NUMERO), ("start", FECHA),
                      ("due", FECHA), ("avance_real", NUMERO), ("hh_gastadas_acum", NUMERO),
                      ("tipo_tarea", TEXTO), ("origen_avance", TEXTO),
-                     ("dias_atraso", ENTERO), ("vence_en_dias", ENTERO)],
+                     ("dias_atraso", ENTERO), ("vence_en_dias", ENTERO)] + ESTADO,
     "serie_diaria": [("corte", FECHA), ("tipo_corte", TEXTO), ("list_id", TEXTO)] + IDENT
                     + [("fecha", FECHA), ("hh_prog_acum", NUMERO),
                                                     ("hh_gastadas_acum", NUMERO), ("hh_proyectadas_acum", NUMERO),
@@ -63,13 +67,24 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
     # Cumplimiento del plan semanal (plan_semanal.py): solo por proyecto y semana, nunca por persona.
     "plan_semanal": [("corte", FECHA), ("tipo_corte", TEXTO), ("list_id", TEXTO), ("codigo", TEXTO), ("proyecto", TEXTO),
                      ("jp_nombre", TEXTO), ("jp_email", TEXTO), ("semana", FECHA), ("hh_planificadas", NUMERO),
-                     ("hh_registradas", NUMERO), ("cumplimiento", NUMERO), ("es_ultimo_corte", BOOLEANO)],
+                     ("hh_registradas", NUMERO), ("cumplimiento", NUMERO), ("es_ultimo_corte", BOOLEANO)] + ESTADO,
+    # Cierre de los proyectos finalizados (finalizados.py): una fila por lista, solo en corridas oficiales.
+    "cierres": [("list_id", TEXTO)] + IDENT
+               + [("tipo_cierre", TEXTO), ("corte_cierre", FECHA), ("ultimo_corte_en_curso", FECHA),
+                  ("fecha_inicio", FECHA), ("fecha_ultima_hora", FECHA), ("fecha_entrega_contractual", FECHA),
+                  ("entrega_contractual_origen", TEXTO), ("duracion_real_dias_habiles", ENTERO),
+                  ("duracion_contractual_dias_habiles", ENTERO), ("diferencia_duracion_dias_habiles", ENTERO),
+                  ("hh_gastadas_acum", NUMERO), ("hh_historicas", NUMERO), ("rev_linea_base", ENTERO),
+                  ("hh_linea_base", NUMERO), ("hh_sobre_linea_base", NUMERO), ("pct_linea_base_usado", NUMERO),
+                  ("hh_contrato", NUMERO), ("hh_sobre_contrato", NUMERO), ("pct_contrato_usado", NUMERO),
+                  ("avance_real_final", NUMERO), ("avance_prog_final", NUMERO), ("registrado_en", FECHA_HORA)],
     "ejecuciones": [("ejecutado_en", FECHA_HORA), ("corte", FECHA), ("tipo_corte", TEXTO), ("modo", TEXTO),
                     ("n_proyectos", ENTERO),
                     ("n_lineas_base_nuevas", ENTERO), ("resultado", TEXTO), ("detalle_error", TEXTO),
                     ("n_importadas_excluidas", ENTERO), ("n_duplicadas_excluidas", ENTERO),
                     ("n_duracion_no_positiva_excluidas", ENTERO), ("n_futuras_excluidas", ENTERO),
-                    ("n_nativas_previas_excluidas", ENTERO), ("n_lb_incrementales", ENTERO)],
+                    ("n_nativas_previas_excluidas", ENTERO), ("n_lb_incrementales", ENTERO),
+                    ("n_proyectos_finalizados", ENTERO), ("n_cierres_nuevos", ENTERO)],
 }
 
 # Politica de escritura por tabla
@@ -77,10 +92,12 @@ REEMPLAZO_TOTAL = {"proyectos", "serie_diaria"}          # se reemplaza (en el a
 POR_CORTE = {"metricas_semanales", "metricas_fase", "advertencias", "plan_semanal"}  # oficial: su corte; ambas: todas las preliminares
 SOLO_OFICIAL = {"fotos_tareas"}                           # solo corridas oficiales; se reemplaza el corte
 SOLO_AGREGAR = {"linea_base", "ejecuciones"}
+POR_LISTA = {"cierres"}                                   # una fila por lista (finalizados.fusionar_cierres)
 CON_ULTIMO_CORTE = {t for t, cols in TABLAS.items() if any(c == "es_ultimo_corte" for c, _ in cols)}
 CON_TIPO_CORTE = {t for t, cols in TABLAS.items() if any(c == "tipo_corte" for c, _ in cols)}
 # Tablas cuyas filas llevan la identificacion del proyecto (se recalcula al escribir, tambien en filas antiguas).
 CON_IDENT = {t for t, cols in TABLAS.items() if any(c == "codigo" for c, _ in cols) and t != "proyectos"}
+CON_ESTADO = {t for t, cols in TABLAS.items() if any(c == "estado_proyecto" for c, _ in cols) and t != "proyectos"}
 
 # Claves naturales: para comprobar que no haya filas duplicadas.
 CLAVES = {
@@ -93,6 +110,7 @@ CLAVES = {
     "advertencias": ("corte", "tipo_corte", "list_id", "tipo", "task_id", "detalle"),
     "ejecuciones": ("ejecutado_en",),
     "plan_semanal": ("corte", "tipo_corte", "list_id", "semana"),
+    "cierres": ("list_id",),
 }
 
 

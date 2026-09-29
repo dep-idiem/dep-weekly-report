@@ -339,6 +339,13 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
             return (f"{d.get('n', len(d['nombres']))} paquete(s) de la línea base ya no están en la lista: "
                     + ", ".join(f"«{x}»" for x in d["nombres"][:3]) + (" …" if len(d["nombres"]) > 3 else ""))
         return "Hay paquetes de la línea base que ya no están en la lista"
+    if tipo == "proyecto_finalizado":
+        if d.get("tipo_cierre") == "incorporado_finalizado":
+            return ("Proyecto finalizado: se incorporó al reporte ya en Proyectos Finalizados; su cierre queda en la "
+                    "pestaña cierres")
+        antes = f" (en curso hasta el corte del {fecha(d['ultimo_corte_en_curso'])})" if d.get("ultimo_corte_en_curso") else ""
+        return (f"Proyecto finalizado: la lista pasó a Proyectos Finalizados{antes}; este es su último corte y su "
+                "cierre queda en la pestaña cierres")
     if tipo == "lista_combinada":
         cods = f" ({', '.join(d['codigos'])})" if d.get("codigos") else ""
         return f"Lista combinada con fases de más de un proyecto{cods}"

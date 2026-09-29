@@ -249,6 +249,12 @@ CATALOGO.update({
         ADMIN, DISTORSIONA, DISTORSIONA, lambda c, a: f"Revisa con el JP de {_l(c)} si el paquete se movió o se "
                                                       "eliminó del alcance; si corresponde, congela una revisión de "
                                                       "la línea base."),
+    "proyecto_finalizado": Entrada(
+        "La lista pasó al folder Proyectos Finalizados: el proyecto sale de las tablas de proyectos en curso, conserva "
+        "su historial y su cierre (HH, avance y duración finales) queda en la pestaña cierres.",
+        INFORMATIVA, INFORMATIVA, INFORMATIVA,
+        lambda c, a: f"No requiere acción. Si {_l(c)} no terminó, vuelve a mover la lista a PJ Ingeniería: en el "
+                     "siguiente corte vuelve a quedar en curso y su cierre se borra."),
 })
 
 
