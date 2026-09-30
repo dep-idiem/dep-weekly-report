@@ -1,7 +1,8 @@
 """Modos de calculo.
 
-- legado: reproduce el Excel manual (sin feriados, proyeccion desde el ultimo punto de una grilla <= C,
-  tareas "No Aplica" incluidas, sin tratamiento de proyecto vencido). Existe para validar contra el Excel.
+- legado: reproduce el Excel manual (sin feriados, proyeccion desde las HH gastadas en el ultimo punto de la
+  grilla de Resumen!D <= C (metricas.grilla_excel), tareas "No Aplica" incluidas, sin tratamiento de proyecto
+  vencido). Existe para validar contra el Excel.
 - dep (por defecto): feriados de Chile y dias no habiles de IDIEM, proyeccion desde las HH gastadas a C
   (inclusive), serie diaria, "No Aplica" fuera del universo y proyecto vencido al primer habil despues de C.
 """
@@ -19,10 +20,9 @@ DIAS_NO_HABILES_CSV = Path(__file__).resolve().parent.parent / "config" / "dias_
 class Modo:
     nombre: str
     cal: Calendario
-    base_en_control: bool        # True: proyeccion desde gastadas a C inclusive; False: grilla <= C (Excel)
+    base_en_control: bool        # True: proyeccion desde gastadas a C inclusive; False: grilla del Excel <= C
     excluir_no_aplica: bool
     vencido_primer_habil: bool   # termino <= C: pendientes atrasadas al primer habil despues de C
-    paso_grilla_legado: int = 3  # solo base_en_control=False
 
     def con(self, **kw) -> "Modo":
         return replace(self, **kw)

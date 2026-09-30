@@ -28,7 +28,7 @@ from dep_clickup.models import ListInfo, Member, Task
 from dep_clickup.naming import list_code
 
 from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, presentacion as PR, proyecto as P
-from . import horas as H, personas as PERS, resolucion as RES
+from . import horas as H, personas as PERS, reproceso as REP, resolucion as RES
 from . import estructura as EST, finalizados as FIN, metricas as MT, plan_semanal as PS, presupuesto as PRES
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
@@ -130,6 +130,7 @@ class Corrida:
     personas: PERS.ReglasPersonas | None = None          # dashboard confidencial (fase 5): solo en memoria
     finalizados_excluidos: list = field(default_factory=list)   # listas de Proyectos Finalizados sin codigo PJ/PR
     horas_por_folder: dict = field(default_factory=dict)        # folder -> horas nativas hasta el corte
+    reproceso: REP.Reproceso | None = None                     # corte oficial ya escrito: recalculo desde fotos
 
 
 def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros: list[Member], corte: dt.date,
@@ -209,7 +210,8 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     fin = lista.due.date() if lista.due else None
     plan = EST.plan_porciones(tareas, clases)
     pend_plan = PS.pendientes_por_paquete(plan, corte, modo.cal)
-    comun = dict(hh_historicas=conteo.hh_historicas, desde_historico=conteo.corte_historico)
+    entrega = next((f.fecha_entrega_contractual for f in lb_filas if f.fecha_entrega_contractual), None)
+    comun = dict(hh_historicas=conteo.hh_historicas, desde_historico=conteo.corte_historico, entrega=entrega)
     res = P.calcular(lb_tareas, tm, horas, corte, fin, modo, fase_lb, **comun,
                      pendientes_plan=pend_plan if proyeccion == "plan_semanal" else None)
     avisos += res.avisos
@@ -316,6 +318,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
     semanal = {**tc, "list_id": lid, **idn, "rev_linea_base": rev, "modo_calculo": modo.nombre,
                **{c: mt.get(c) for c, _ in E.METRICAS}, "n_advertencias": len(r.advertencias), **r.presupuesto,
                "hh_estimadas_termino_plan_semanal": r.extra.get("hh_estimadas_plan_semanal"),
+               "fecha_termino_usada": mt.get("fecha_termino_usada"),
                "dias_habiles_para_entrega": PR.dias_habiles_para_entrega(
                    corte, r.lista.due.date() if r.lista.due else None, modo.cal)}
     motivo = None if r.lb_filas else PR.motivo_sin_linea_base(a["tipo"] for a in r.advertencias_todas)
@@ -371,6 +374,9 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
                                       and e.get("corte") and e["corte"] < corte
                                       for e in existentes.get("ejecuciones", []))
     observadas = {f["list_id"] for f in existentes.get("fotos_tareas", []) if f.get("corte") and f["corte"] < corte}
+    if tipo_corte == E.OFICIAL and REP.ya_escrito(corte, existentes.get("ejecuciones", [])):
+        # Un corte oficial ya escrito se reprocesa solo desde sus fotos y su linea base (reproceso.py).
+        return _reprocesar(corrida, existentes, sheets, solo, ahora)
 
     t0 = time.monotonic()
     cu = cu or ClickUpClient()
@@ -493,6 +499,10 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
     corrida.finales = {t: completar(t, fusionar(t, base.get(t, []), nuevas[t], corte, alcance, tipo_corte,
                                                 RETENCION_PRELIMINAR_DIAS), ident)
                        for t in E.TABLAS if t != "linea_base"}
+    # Cortes oficiales reescritos antes con datos en vivo: reprocesado_en y su fila en ejecuciones (reproceso.py).
+    corrida.finales["ejecuciones"] += REP.filas_marca(corrida.finales["ejecuciones"], ahora)
+    corrida.finales["metricas_semanales"] = REP.marcar(corrida.finales["metricas_semanales"],
+                                                       corrida.finales["ejecuciones"])
     corrida.filas_antes = {t: len(existentes.get(t, [])) for t in E.TABLAS}
     corrida.plan_sheets = sheets.plan(corrida.finales, corrida.lb_nuevas)
 
@@ -537,6 +547,37 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
     return corrida
 
 
+def _reprocesar(c: Corrida, existentes: dict[str, list[dict]], sheets: AlmacenSheets, solo: str | None,
+                ahora: dt.datetime) -> Corrida:
+    """Corte oficial ya escrito: metricas_semanales y metricas_fase desde fotos_tareas y la linea base del corte.
+    Si falta un dato, no se reescribe (fila "reproceso_omitido" en ejecuciones). En ambos casos se marcan los cortes
+    reescritos antes con datos en vivo (reprocesado_en)."""
+    rp = c.reproceso = REP.reprocesar(c.corte, existentes, c.modo, solo, PROYECCION)
+    ej = existentes.get("ejecuciones", [])
+    codigos = {f["list_id"]: f.get("codigo") for f in existentes.get("metricas_semanales", []) if f.get("list_id")}
+    fila = {"ejecutado_en": ahora, "corte": c.corte, "tipo_corte": E.OFICIAL,
+            "modo": "dry_run" if c.dry_run else REP.REPROCESO, "n_proyectos": len(rp.recalculadas) + len(rp.faltas),
+            "n_lineas_base_nuevas": 0, "resultado": REP.OMITIDO if rp.omitido else REP.OK,
+            "detalle_error": rp.detalle(codigos)}
+    sem, fas = REP.aplicar(rp, existentes.get("metricas_semanales", []), existentes.get("metricas_fase", []))
+    ej_fin = fusionar("ejecuciones", ej, [fila], c.corte)
+    ej_fin += REP.filas_marca(ej_fin, ahora)
+    c.finales = {"metricas_semanales": completar("metricas_semanales", REP.marcar(sem, ej_fin), {}),
+                 "metricas_fase": fas, "ejecuciones": ej_fin}
+    del_corte = lambda f: f.get("corte") == c.corte and (f.get("tipo_corte") or E.OFICIAL) == E.OFICIAL
+    c.nuevas = {"metricas_semanales": [f for f in c.finales["metricas_semanales"] if del_corte(f)],
+                "metricas_fase": [f for f in fas if del_corte(f)], "ejecuciones": ej_fin[len(ej):]}
+    c.filas_antes = {t: len(existentes.get(t, [])) for t in E.TABLAS}
+    if c.dry_run:
+        AlmacenCsv(dir_dry_run(c.corte, c.tipo_corte)).escribir(c.nuevas)
+    else:
+        c.respaldo = _respaldar(existentes, {}, sheets, ahora)
+        sheets.escribir(c.finales, [])
+        c.verificacion = _verificar_lectura(sheets, c, existentes)
+    c.peticiones_sheets = dict(sheets.peticiones)
+    return c
+
+
 def dir_dry_run(corte: dt.date, tipo_corte: str) -> Path:
     return DRY_RUN_DIR / (corte.isoformat() if tipo_corte == E.OFICIAL else f"{corte.isoformat()}_preliminar")
 
@@ -572,6 +613,8 @@ def _verificar_lectura(sheets: AlmacenSheets, c: "Corrida", antes: dict[str, lis
     leido = sheets.leer(E.TABLAS)
     out = {}
     for t in E.TABLAS:
+        if t != "linea_base" and t not in c.finales:
+            continue                        # pestaña que la corrida no escribe (reproceso)
         if t == "linea_base":
             esperado = list(antes.get(t, [])) + list(c.lb_nuevas)
         else:
@@ -646,6 +689,21 @@ def main(argv: list[str] | None = None) -> int:
 def imprimir(c: Corrida, dry_run: bool) -> None:
     """Resumen de la corrida (sin secretos ni datos por persona)."""
     corte = c.corte
+    if c.reproceso is not None:
+        rp = c.reproceso
+        print(f"Corte {corte} oficial ya escrito: reproceso desde fotos_tareas y línea base ({'dry-run' if dry_run else 'escritura'}); "
+              f"datos del corte: {rp.datos_de}")
+        print("  " + ("OMITIDO, no se reescribieron métricas" if rp.omitido else f"{len(rp.recalculadas)} proyectos recalculados"))
+        for lid, t in sorted(rp.faltas.items()):
+            print(f"  falta en {lid}: {t}")
+        for f in c.nuevas.get("ejecuciones", []):
+            print(f"  ejecuciones += {f['modo']} {f['corte']} {f['resultado']}: {f['detalle_error']}")
+        marcas = sorted({(f['corte'], f.get('reprocesado_en')) for f in c.finales['metricas_semanales']
+                         if f.get('reprocesado_en')})
+        print("  reprocesado_en: " + (", ".join(f"{a} -> {b}" for a, b in marcas) or "ninguno"))
+        print(f"  CSV: {dir_dry_run(corte, c.tipo_corte)}" if dry_run else f"  Respaldo: {c.respaldo}; relectura: "
+              + ", ".join(f"{t} {'OK' if v['ok'] else 'DIFERENTE'}" for t, v in c.verificacion.items()))
+        return
     print(f"Corte {corte} {c.tipo_corte} ({'dry-run' if dry_run else 'escritura'}, modo {c.modo.nombre}): "
           f"{len(c.listas)} proyectos, {len(c.lb_nuevas)} filas nuevas de línea base, "
           f"{len(c.nuevas.get('advertencias', []))} advertencias, "

@@ -146,7 +146,8 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
              control: dt.date, fin: dt.date | None, modo: Modo,
              fase_lb: Mapping[str, str] | None = None, hh_historicas: float = 0.0,
              desde_historico: dt.date | None = None,
-             pendientes_plan: Mapping[str, Mapping[dt.date, float]] | None = None) -> ResultadoProyecto:
+             pendientes_plan: Mapping[str, Mapping[dt.date, float]] | None = None,
+             entrega: dt.date | None = None) -> ResultadoProyecto:
     """Metricas de un proyecto al corte `control`.
 
     lb: tareas de la linea base vigente (None = sin linea base: no hay programado).
@@ -158,6 +159,8 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
     desde_historico: fecha del corte historico (si es posterior al corte, la serie parte en el corte).
     pendientes_plan: proyeccion por plan semanal (plan_semanal.py): paquete -> HH por dia de sus porciones futuras.
         Esos paquetes usan ese reparto en vez del uniforme; los demas, el uniforme.
+    entrega: fecha de entrega contractual de la linea base. hh_estimadas_al_termino llega hasta el ultimo pendiente;
+        hh_estimadas_a_entrega es el valor de la curva proyectada en esta fecha (vacio si ya paso o no hay linea base).
     """
     cal = modo.cal
     avisos: list[Aviso] = []
@@ -231,12 +234,16 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
     if modo.base_en_control:
         base = gastadas
     else:
-        starts = [t.start for t in (lb_u or actual_u) if t.start]
-        g0 = (min(starts) if starts else control) - dt.timedelta(days=1)
-        ultimo = g0 + dt.timedelta(days=((control - g0).days // modo.paso_grilla_legado) * modo.paso_grilla_legado)
-        base = horas_ord.hasta(ultimo, inclusive=False)
+        # Excel: VLOOKUP(C; Resumen!D:F; 3) = gastadas (horas con fecha < punto) en el ultimo punto de la grilla <= C.
+        # La grilla parte en el start mas temprano de todas las tareas del programa (Programado!H2 = MIN(H4:H173)).
+        starts = [t.start for t in (lb if lb is not None else actuales) if t.start]
+        puntos = [g for g in m.grilla_excel(min(starts) if starts else control, fin) if g <= control]
+        base = horas_ord.hasta(puntos[-1], inclusive=False) if puntos else 0.0
     estimadas = hh_historicas + base + sum(pend_diario.values())
     gastadas_total = hh_historicas + gastadas
+    # Valor de la curva proyectada en la entrega contractual de la linea base (si la entrega ya paso, la curva
+    # proyectada no existe en esa fecha: vacio).
+    a_entrega = hh_historicas + base + pend.hasta(entrega) if (lb is not None and entrega and entrega >= control) else None
 
     ev = avance_real * total if (avance_real is not None and total) else None
     metricas = {
@@ -250,6 +257,7 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
         "spi": ev / hh_prog_acum if (ev is not None and hh_prog_acum) else None,
         "cpi": ev / gastadas_total if (ev is not None and gastadas_total) else None,
         "hh_estimadas_al_termino": estimadas,
+        "hh_estimadas_a_entrega": a_entrega,
         "hh_actuales_clickup": tot_act,
         "fecha_termino_usada": fin,
     }

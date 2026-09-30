@@ -19,6 +19,14 @@ Al terminar, la lista de un proyecto se mueve de PJ Ingeniería a Proyectos Fina
 
 **Looker Studio:** en las tablas y gráficos de proyectos en curso, agregar el filtro `estado_proyecto = en_curso` (además de `es_ultimo_corte` o `es_ultimo_oficial`, como hoy). Los cierres se muestran desde la pestaña `cierres`.
 
+## Proyección a la entrega y reproceso de cortes oficiales
+
+- `hh_estimadas_al_termino` (metricas_semanales) lleva la curva proyectada hasta la última tarea pendiente. `hh_estimadas_a_entrega` es el valor de esa curva en la fecha de entrega contractual de la línea base (el valor que el Excel manual mostraba en `M2`); queda vacío si la entrega ya pasó o si no hay línea base. `fecha_termino_usada` es el término con que se repartieron los pendientes atrasados.
+- **Un corte oficial ya escrito no se vuelve a calcular con ClickUp en vivo** (`dep_reportes/reproceso.py`). Correrlo de nuevo recalcula `metricas_semanales` y `metricas_fase` solo desde sus `fotos_tareas`, su línea base (la vigente en su última escritura) y el saldo histórico y el término guardados en su fila. No toca las demás pestañas. Si a algún proyecto le falta un dato (por ejemplo, filas escritas antes de existir `fecha_termino_usada`), el corte no se reescribe y queda una fila `reproceso_omitido` en `ejecuciones` con el dato que falta.
+- `reprocesado_en` (metricas_semanales): si un corte oficial se escribió más de una vez con ClickUp en vivo (antes de esta regla), sus números son de la última escritura; la columna guarda ese momento y `ejecuciones` tiene una fila `reprocesado` con "reprocesado con datos de <fecha>". Es el caso de los cortes del 20-09 (datos del 25-09 15:37) y del 27-09 (datos del 29-09 15:13). Ambas cosas se deducen del historial de `ejecuciones` en cada escritura.
+
+**Looker Studio:** mostrar `reprocesado_en` junto al corte (por ejemplo, "reprocesado con datos de …" cuando no está vacío) y agregar `hh_estimadas_a_entrega` junto a `hh_estimadas_al_termino`.
+
 ## Estructura
 
 | Ruta | Qué es |
@@ -64,7 +72,7 @@ En local:
 
 ```powershell
 python -m dep_reportes.run --tipo-corte preliminar --dry-run          # CSV en reportes/dry_run/
-python -m dep_reportes.run --tipo-corte oficial --corte 2026-09-27    # escribe en la hoja
+python -m dep_reportes.run --tipo-corte oficial --corte 2026-10-04    # escribe en la hoja (un corte ya escrito: reproceso desde fotos)
 python -m dep_reportes.linea_base revisar --list-id <id> --motivo "…" [--tipo tardia] [--dry-run]
 python -m pytest -q
 ```

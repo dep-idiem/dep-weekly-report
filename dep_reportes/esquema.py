@@ -23,10 +23,13 @@ OFICIAL, PRELIMINAR = "oficial", "preliminar"
 CORTE = [("tipo_corte", TEXTO), ("es_ultimo_corte", BOOLEANO), ("es_ultimo_oficial", BOOLEANO)]
 
 # hh_gastadas_acum = hh_historicas (saldo del Timetracker) + horas nativas de ClickUp (horas.py).
+# hh_estimadas_al_termino: la curva proyectada hasta el ultimo pendiente; hh_estimadas_a_entrega: su valor en la
+# fecha de entrega contractual de la linea base (vacio si ya paso o no hay linea base).
 METRICAS = [("total_hh", NUMERO), ("hh_prog_acum", NUMERO), ("hh_gastadas_acum", NUMERO), ("hh_historicas", NUMERO),
             ("avance_prog", NUMERO),
             ("avance_real", NUMERO), ("ev", NUMERO), ("spi", NUMERO), ("cpi", NUMERO),
             ("hh_estimadas_al_termino", NUMERO), ("hh_estimadas_termino_plan_semanal", NUMERO),
+            ("hh_estimadas_a_entrega", NUMERO),
             ("hh_actuales_clickup", NUMERO)]
 
 TABLAS: dict[str, list[tuple[str, str]]] = {
@@ -47,7 +50,10 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                              ("semanas_restantes_al_ritmo", NUMERO), ("fecha_agotamiento_estimada", FECHA)]
                           # Presentacion (presentacion.py): dias habiles para la entrega, deltas frente al corte oficial anterior y semaforo
                           + [("dias_habiles_para_entrega", ENTERO), ("delta_avance_real", NUMERO), ("delta_avance_prog", NUMERO),
-                             ("delta_desviacion_pts", NUMERO), ("delta_hh_gastadas", NUMERO), ("semaforo", TEXTO)],
+                             ("delta_desviacion_pts", NUMERO), ("delta_hh_gastadas", NUMERO), ("semaforo", TEXTO)]
+                          # Reproceso (reproceso.py): termino con que se repartieron los pendientes (insumo del reproceso
+                          # desde fotos) y, si el corte se recalculo con datos posteriores a su primera escritura, cuando.
+                          + [("fecha_termino_usada", FECHA), ("reprocesado_en", FECHA_HORA)],
     "metricas_fase": [("corte", FECHA)] + CORTE + [("list_id", TEXTO)] + IDENT
                      + [("fase", TEXTO), ("hh_linea_base", NUMERO), ("hh_prog_acum", NUMERO),
                         ("hh_gastadas_acum", NUMERO), ("avance_real", NUMERO)],

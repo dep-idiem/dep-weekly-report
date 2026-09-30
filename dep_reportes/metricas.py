@@ -198,6 +198,27 @@ def serie_resumen(grilla: Sequence[dt.date], programa: Iterable[TareaMetrica], a
     return out
 
 
+# Resumen!D55:D75: paso de cada fila (las filas 66 y 71-74 suman 2 dias; las demas, 3).
+PASOS_GRILLA_EXCEL = (3,) * 11 + (2,) + (3,) * 4 + (2,) * 4 + (3,)
+
+
+def grilla_excel(inicio_programa: dt.date, fin: dt.date) -> list[dt.date]:
+    """Resumen!D54:D75, literal: D54 = MIN(Programado!H) - 1 y cada fila suma su paso mientras no pase de M13
+    (= M2 = fin); la que pasaria queda en M2 si la anterior + 2 < M2 + paso y, si no, es #N/A (se omite). Desde ahi
+    el Excel repite M2 en las filas que quedan: se corta en el primer M2 (los repetidos no cambian ningun VLOOKUP)."""
+    out = [inicio_programa - dt.timedelta(days=1)]
+    for paso in PASOS_GRILLA_EXCEL:
+        prev = out[-1]
+        if prev + dt.timedelta(days=paso) <= fin:
+            out.append(prev + dt.timedelta(days=paso))
+        elif prev + dt.timedelta(days=2) < fin + dt.timedelta(days=paso) and prev != fin:
+            out.append(fin)
+            break
+        else:
+            break
+    return out
+
+
 def grilla(inicio: dt.date, fin: dt.date, control: dt.date, paso_dias: int = 7) -> list[dt.date]:
     """Grilla de fechas para el sistema: cada `paso_dias` desde inicio, mas la fecha de control y el fin.
 
