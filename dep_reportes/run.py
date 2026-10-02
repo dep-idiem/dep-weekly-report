@@ -22,7 +22,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Sequence
 
-from dep_clickup import ClickUpClient
+from dep_clickup import ClickUpClient, ClickUpError
 from dep_clickup.config import TZ
 from dep_clickup.models import ListInfo, Member, Task
 from dep_clickup.naming import list_code
@@ -272,6 +272,34 @@ def fila_advertencia(corte: dt.date, list_id: str, tipo: str, task_id: str, deta
             "detalle": detalle, "mensaje": PR.mensaje(tipo, ctx.tarea, ctx.datos), **RES.resolver(tipo, ctx)}
 
 
+def ubicacion(cu: ClickUpClient, list_id: str) -> dict:
+    """Donde esta hoy en ClickUp una lista que salio de los dos folders (para el mensaje de la advertencia)."""
+    try:
+        l = cu.get_list(list_id)
+    except ClickUpError as e:
+        if e.status in (401, 403, 404):
+            return {"eliminada": True}
+        log.warning("No se pudo ubicar la lista %s: %s", list_id, e)
+        return {}
+    if l.get("deleted"):
+        return {"eliminada": True}
+    return {"folder": (l.get("folder") or {}).get("name"), "espacio": (l.get("space") or {}).get("name"),
+            "archivada": bool(l.get("archived"))}
+
+
+def aviso_fuera_de_folders(list_id: str, idn: dict, ubic: dict, corte: dt.date, tipo_corte: str) -> dict:
+    """Advertencia de nivel proyecto (para Administracion DEP) de una lista fuera de los dos folders de reporte."""
+    datos = {**ubic, "ultimo_corte": idn.get("ultimo_corte")}
+    donde = ("eliminada o sin acceso" if ubic.get("eliminada") else
+             f"folder {ubic.get('folder')} / espacio {ubic.get('espacio')}" + (" (archivada)" if ubic.get("archivada") else "")
+             if ubic else "ubicación desconocida")
+    detalle = f"Fuera de PJ Ingeniería y Proyectos Finalizados; hoy: {donde}; último corte en la hoja: {idn.get('ultimo_corte')}"
+    fila = fila_advertencia(corte, list_id, P.ADV_FUERA_DE_FOLDERS, "", detalle,
+                            RES.Contexto(lista=idn.get("proyecto"), datos=datos))
+    return {**fila, "tipo_corte": tipo_corte, **{c: idn.get(c) for c, _ in E.IDENT},
+            "estado_proyecto": FIN.FUERA_DE_FOLDERS}
+
+
 def identificacion(r: ResultadoLista) -> dict:
     nombre_corto, cliente, _ = PR.partes_nombre(r.lista.name)
     return {"codigo": r.codigo, "nombre_corto": nombre_corto, "cliente": cliente,
@@ -487,11 +515,12 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
                          [len(existentes.get("linea_base", [])):]]
     ident = {r.lista.id: identificacion(r) for r in corrida.listas}
     if not solo:
-        # Listas con filas en la hoja que ya no estan en ninguno de los dos folders (movidas a otro lado o borradas).
-        for t in E.CON_ESTADO:
-            for f in existentes.get(t, []):
-                if f.get("list_id") and f["list_id"] not in ident:
-                    ident[f["list_id"]] = {"estado_proyecto": FIN.FUERA_DE_FOLDERS}
+        # Listas con filas en la hoja que ya no estan en ninguno de los dos folders (movidas a otro lado o borradas):
+        # su historial queda como fuera_de_folders y en cada corte va una advertencia para Administracion DEP.
+        fuera = FIN.fuera_de_folders(existentes, set(ident), E.CON_ESTADO, [c for c, _ in E.IDENT])
+        for lid, idn in fuera.items():
+            ident[lid] = {"estado_proyecto": FIN.FUERA_DE_FOLDERS}
+            nuevas["advertencias"].append(aviso_fuera_de_folders(lid, idn, ubicacion(cu, lid), corte, tipo_corte))
     for t in E.CON_ULTIMO_CORTE:           # tambien en el CSV del dry-run
         nuevas[t] = completar(t, fusionar(t, existentes.get(t, []), nuevas[t], corte, alcance, tipo_corte,
                                           RETENCION_PRELIMINAR_DIAS), ident)[

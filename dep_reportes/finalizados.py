@@ -67,6 +67,22 @@ def situacion(list_id: str, en_finalizados: bool, corte: dt.date, oficial: bool,
                      ultimo_corte_en_curso=previos[-1] if previos else None)
 
 
+def fuera_de_folders(existentes: Mapping[str, Sequence[dict]], en_folders: Collection[str],
+                     tablas: Collection[str], columnas: Sequence[str]) -> dict[str, dict]:
+    """Listas con filas en la hoja (tablas) que no estan en ninguno de los dos folders -> columnas de su fila mas
+    reciente (la identificacion con que se publico) y ultimo_corte."""
+    out: dict[str, dict] = {}
+    for t in tablas:
+        for f in existentes.get(t, []):
+            lid = f.get("list_id")
+            if not lid or lid in en_folders:
+                continue
+            c, prev = f.get("corte"), out.get(lid)
+            if prev is None or (c is not None and (prev["ultimo_corte"] is None or c > prev["ultimo_corte"])):
+                out[lid] = {**{k: f.get(k) for k in columnas}, "ultimo_corte": c}
+    return out
+
+
 def cortes_en_curso(metricas: Sequence[dict]) -> dict[str, set[dt.date]]:
     """list_id -> cortes con filas semanales en curso (las filas anteriores a este cambio no tienen estado)."""
     out: dict[str, set[dt.date]] = {}

@@ -255,6 +255,14 @@ CATALOGO.update({
         INFORMATIVA, INFORMATIVA, INFORMATIVA,
         lambda c, a: f"No requiere acción. Si {_l(c)} no terminó, vuelve a mover la lista a PJ Ingeniería: en el "
                      "siguiente corte vuelve a quedar en curso y su cierre se borra."),
+    "proyecto_fuera_de_folders": Entrada(
+        "La lista tiene filas en la hoja pero ya no está en PJ Ingeniería ni en Proyectos Finalizados (se movió a otro "
+        "folder o espacio, se archivó o se eliminó): el proyecto deja de reportarse y su historial queda con "
+        "estado_proyecto = fuera_de_folders.",
+        ADMIN, DISTORSIONA, DISTORSIONA,
+        lambda c, a: f"Revisa dónde quedó {_l(c)}: si sigue en curso, devuélvela a PJ Ingeniería; si terminó, a "
+                     "Proyectos Finalizados. Si salió de DEP a propósito, no requiere acción.",
+        prioridad=ALTA),
 })
 
 

@@ -170,3 +170,47 @@ def test_congelado_no_emite_semanales_ni_advertencias():
     out = run.filas_de(r, C2, por_nombre("dep"), AHORA)
     assert set(t for t, f in out.items() if f) == {"proyectos", "serie_diaria"}
     assert out["serie_diaria"][0]["corte"] == C2
+
+
+# --- listas fuera de los dos folders ---------------------------------------------------------------
+
+def test_fuera_de_folders_toma_la_identificacion_mas_reciente():
+    ex = {"metricas_semanales": [{"list_id": "X", "corte": C1, "codigo": "PJ-2026.0177", "proyecto": "viejo"},
+                                 {"list_id": "X", "corte": C2, "codigo": "PJ-2026.0177", "proyecto": "nuevo"},
+                                 {"list_id": "L", "corte": C2, "codigo": "PJ-2026.0001"}],
+          "cierres": [{"list_id": "X", "codigo": "PJ-2026.0177"}]}
+    out = FIN.fuera_de_folders(ex, {"L"}, ["metricas_semanales", "cierres"], ["codigo", "proyecto"])
+    assert out == {"X": {"codigo": "PJ-2026.0177", "proyecto": "nuevo", "ultimo_corte": C2}}
+
+
+class CuUbicacion:
+    def __init__(self, resp=None, status=None):
+        self.resp, self.status = resp, status
+
+    def get_list(self, list_id):
+        if self.status:
+            raise run.ClickUpError(self.status, f"/list/{list_id}", "")
+        return self.resp
+
+
+def test_ubicacion_de_una_lista_fuera_de_folders():
+    movida = {"folder": {"name": "PJ Láser"}, "space": {"name": "Proyectos Activos"}, "archived": False}
+    assert run.ubicacion(CuUbicacion(movida), "X") == {"folder": "PJ Láser", "espacio": "Proyectos Activos",
+                                                       "archivada": False}
+    assert run.ubicacion(CuUbicacion(status=404), "X") == {"eliminada": True}
+    assert run.ubicacion(CuUbicacion({"deleted": True}), "X") == {"eliminada": True}
+    assert run.ubicacion(CuUbicacion(status=500), "X") == {}
+
+
+def test_aviso_fuera_de_folders_para_administracion():
+    idn = {"codigo": "PJ-2026.0177", "proyecto": "2026.0177 · Sede Chiloé", "jp_nombre": "JP", "ultimo_corte": C2}
+    f = run.aviso_fuera_de_folders("X", idn, {"folder": "PJ Láser", "espacio": "Proyectos Activos", "archivada": False},
+                                   D(2026, 10, 1), E.PRELIMINAR)
+    assert f["tipo"] == P.ADV_FUERA_DE_FOLDERS and f["nivel"] == "proyecto" and f["task_id"] == ""
+    assert f["estado_proyecto"] == FIN.FUERA_DE_FOLDERS and f["codigo"] == "PJ-2026.0177"
+    assert f["tipo_corte"] == E.PRELIMINAR and f["corte"] == D(2026, 10, 1)
+    assert "«PJ Láser»" in f["mensaje"] and "último corte reportado: 20-09-2026" in f["mensaje"]
+    assert f["responsable_accion"] == "Administración DEP" and f["prioridad"] == "alta"
+    assert set(f) >= set(E.columnas("advertencias")) - {"es_ultimo_corte", "es_ultimo_oficial"}
+    eliminada = run.aviso_fuera_de_folders("X", idn, {"eliminada": True}, D(2026, 10, 1), E.PRELIMINAR)
+    assert "ya no existe" in eliminada["mensaje"]

@@ -339,6 +339,17 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
             return (f"{d.get('n', len(d['nombres']))} paquete(s) de la línea base ya no están en la lista: "
                     + ", ".join(f"«{x}»" for x in d["nombres"][:3]) + (" …" if len(d["nombres"]) > 3 else ""))
         return "Hay paquetes de la línea base que ya no están en la lista"
+    if tipo == "proyecto_fuera_de_folders":
+        desde = f" (último corte reportado: {fecha(d['ultimo_corte'])})" if d.get("ultimo_corte") else ""
+        if d.get("eliminada"):
+            donde = "la lista ya no existe en ClickUp o no hay acceso a ella"
+        elif d.get("archivada"):
+            donde = f"la lista está archivada en ClickUp (folder «{d.get('folder') or '?'}»)"
+        elif d.get("folder"):
+            donde = f"la lista se movió al folder «{d['folder']}» (espacio {d.get('espacio') or '?'})"
+        else:
+            donde = "la lista ya no está en PJ Ingeniería ni en Proyectos Finalizados"
+        return f"Proyecto fuera de los folders de reporte: {donde}; dejó de reportarse{desde}"
     if tipo == "proyecto_finalizado":
         if d.get("tipo_cierre") == "incorporado_finalizado":
             return ("Proyecto finalizado: se incorporó al reporte ya en Proyectos Finalizados; su cierre queda en la "
