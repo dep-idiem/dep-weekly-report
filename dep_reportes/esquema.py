@@ -13,7 +13,10 @@ PRESENTACION = [("nombre_corto", TEXTO), ("cliente", TEXTO), ("proyecto", TEXTO)
 # estado_proyecto: "en_curso" (folder PJ Ingenieria) o "finalizado" (folder Proyectos Finalizados; finalizados.py).
 # Se actualiza en todas las filas de la lista, tambien las antiguas: es el filtro de Looker para proyectos en curso.
 ESTADO = [("estado_proyecto", TEXTO)]
-IDENT = [("codigo", TEXTO)] + PRESENTACION + [("jp_nombre", TEXTO), ("jp_email", TEXTO)] + ESTADO
+# programa: id del programa de servicio continuo (config/programas.json; programas.py) o vacio. Filtro de Looker para
+# sacar esas listas de las paginas de curva S. Se actualiza en todas las filas de la lista, como estado_proyecto.
+PROGRAMA = [("programa", TEXTO)]
+IDENT = [("codigo", TEXTO)] + PRESENTACION + [("jp_nombre", TEXTO), ("jp_email", TEXTO)] + ESTADO + PROGRAMA
 
 # Tipo de corrida y banderas (fase 3):
 # - tipo_corte: "oficial" (semanal, corte domingo, queda en el historial) o "preliminar" (diaria, se sobrescribe).
@@ -37,7 +40,7 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                   ("jp_email", TEXTO),
                   ("estado_lista", TEXTO), ("fecha_inicio", FECHA), ("fecha_termino_vigente", FECHA),
                   ("estado_linea_base", TEXTO), ("rev_vigente", ENTERO), ("actualizado_en", FECHA_HORA)]
-                 + ESTADO + [("corte_cierre", FECHA)],
+                 + ESTADO + [("corte_cierre", FECHA)] + PROGRAMA,
     "linea_base": [("list_id", TEXTO), ("rev", ENTERO), ("tipo", TEXTO), ("fecha_captura", FECHA_HORA), ("motivo", TEXTO),
                    ("fecha_inicio", FECHA), ("fecha_entrega_contractual", FECHA), ("task_id", TEXTO),
                    ("task_nombre", TEXTO), ("fase", TEXTO), ("hh", NUMERO), ("start", FECHA), ("due", FECHA)],
@@ -84,6 +87,25 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                   ("hh_linea_base", NUMERO), ("hh_sobre_linea_base", NUMERO), ("pct_linea_base_usado", NUMERO),
                   ("hh_contrato", NUMERO), ("hh_sobre_contrato", NUMERO), ("pct_contrato_usado", NUMERO),
                   ("avance_real_final", NUMERO), ("avance_prog_final", NUMERO), ("registrado_en", FECHA_HORA)],
+    # Programas de servicio continuo (programas.py): se reemplazan completas en cada corrida (salvo con --solo).
+    "programa_horas": [("corte", FECHA), ("tipo_corte", TEXTO), ("programa", TEXTO), ("programa_nombre", TEXTO),
+                       ("cliente", TEXTO), ("mes", FECHA), ("contrato", TEXTO), ("contrato_nombre", TEXTO),
+                       ("linea", TEXTO), ("linea_nombre", TEXTO), ("responsable_linea", TEXTO), ("list_id", TEXTO),
+                       ("origen", TEXTO), ("hh", NUMERO)],
+    "programa_contratos": [("corte", FECHA), ("tipo_corte", TEXTO), ("programa", TEXTO), ("programa_nombre", TEXTO),
+                           ("cliente", TEXTO), ("contrato", TEXTO), ("contrato_nombre", TEXTO), ("codigo", TEXTO),
+                           ("mes", FECHA), ("en_periodo", BOOLEANO), ("es_futuro", BOOLEANO), ("hh_mes", NUMERO),
+                           ("hh_acum", NUMERO), ("hh_acum_periodo", NUMERO), ("hh_plan_mes", NUMERO),
+                           ("hh_plan_acum", NUMERO), ("hh_periodo", NUMERO), ("meses_periodo", ENTERO),
+                           ("periodo_inicio", FECHA), ("periodo_fin", FECHA), ("pct_consumido", NUMERO),
+                           # horas "compartido" del programa en el mes: iguales en las filas de todos los contratos
+                           ("hh_compartidas_mes", NUMERO), ("hh_compartidas_acum", NUMERO)],
+    "programa_entregables": [("corte", FECHA), ("tipo_corte", TEXTO), ("programa", TEXTO), ("programa_nombre", TEXTO),
+                             ("cliente", TEXTO), ("contrato", TEXTO), ("contrato_nombre", TEXTO), ("linea", TEXTO),
+                             ("linea_nombre", TEXTO), ("responsable_linea", TEXTO), ("list_id", TEXTO),
+                             ("task_id", TEXTO), ("tipo_entregable", TEXTO), ("nombre", TEXTO), ("fase", TEXTO),
+                             ("estado", TEXTO), ("fecha_entrega", FECHA), ("fecha_cierre", FECHA), ("mes", FECHA),
+                             ("situacion", TEXTO), ("dias_atraso", ENTERO), ("url", TEXTO)],
     "ejecuciones": [("ejecutado_en", FECHA_HORA), ("corte", FECHA), ("tipo_corte", TEXTO), ("modo", TEXTO),
                     ("n_proyectos", ENTERO),
                     ("n_lineas_base_nuevas", ENTERO), ("resultado", TEXTO), ("detalle_error", TEXTO),
@@ -99,10 +121,12 @@ POR_CORTE = {"metricas_semanales", "metricas_fase", "advertencias", "plan_semana
 SOLO_OFICIAL = {"fotos_tareas"}                           # solo corridas oficiales; se reemplaza el corte
 SOLO_AGREGAR = {"linea_base", "ejecuciones"}
 POR_LISTA = {"cierres"}                                   # una fila por lista (finalizados.fusionar_cierres)
+PROGRAMAS = {"programa_horas", "programa_contratos", "programa_entregables"}   # completas; con --solo no se tocan
 CON_ULTIMO_CORTE = {t for t, cols in TABLAS.items() if any(c == "es_ultimo_corte" for c, _ in cols)}
 CON_TIPO_CORTE = {t for t, cols in TABLAS.items() if any(c == "tipo_corte" for c, _ in cols)}
 # Tablas cuyas filas llevan la identificacion del proyecto (se recalcula al escribir, tambien en filas antiguas).
-CON_IDENT = {t for t, cols in TABLAS.items() if any(c == "codigo" for c, _ in cols) and t != "proyectos"}
+CON_IDENT = {t for t, cols in TABLAS.items() if any(c == "codigo" for c, _ in cols) and t != "proyectos"
+             and t not in PROGRAMAS}
 CON_ESTADO = {t for t, cols in TABLAS.items() if any(c == "estado_proyecto" for c, _ in cols) and t != "proyectos"}
 
 # Claves naturales: para comprobar que no haya filas duplicadas.
@@ -117,6 +141,9 @@ CLAVES = {
     "ejecuciones": ("ejecutado_en", "corte", "modo"),   # un reproceso escribe varias filas con la misma hora
     "plan_semanal": ("corte", "tipo_corte", "list_id", "semana"),
     "cierres": ("list_id",),
+    "programa_horas": ("programa", "mes", "contrato", "linea", "list_id", "origen"),
+    "programa_contratos": ("programa", "contrato", "mes"),
+    "programa_entregables": ("programa", "list_id", "task_id"),
 }
 
 

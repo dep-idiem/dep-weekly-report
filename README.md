@@ -27,6 +27,24 @@ Al terminar, la lista de un proyecto se mueve de PJ Ingeniería a Proyectos Fina
 
 **Looker Studio:** mostrar `reprocesado_en` junto al corte (por ejemplo, "reprocesado con datos de …" cuando no está vacío) y agregar `hh_estimadas_a_entrega` junto a `hh_estimadas_al_termino`.
 
+## Programas de servicio continuo
+
+Proyectos largos que no se miden con curva S, sino por contrato y por línea de trabajo (`dep_reportes/programas.py`, configurados en `config/programas.json`). Hoy: **CMP-SHM** (Monitoreo SHM CMP), con los contratos 0019 (Los Colorados) y 0147 (Apilador) y las líneas General, Informes y Modelos.
+
+- **Línea:** la de la lista (cada encargado presenta solo la suya). **Contrato:** fijo en la lista (`"contrato"`) o deducido del nombre de la fase con `patron_fase`. Si la fase calza con más de un contrato o con ninguno, la hora queda como `compartido`: aparece en las horas por línea y en las columnas `hh_compartidas_*` de `programa_contratos`, pero no en el consumo de ningún contrato, y genera la advertencia de nivel programa `programa_horas_compartidas` (para Administración DEP, con el total y las fases de origen). Así la vista funciona con las listas actuales y también con una lista «General» que tenga una fase por contrato: basta cambiar `listas` en la config.
+- **Horas:** las mismas que el reporte cuenta en cada lista (el total del programa es la suma de `hh_gastadas_acum` de sus listas). El saldo histórico del Timetracker va al contrato fijo de su lista, en la línea `historial`.
+- **`solo_consumo`:** la lista no entra a la vista (horas por línea ni entregables), pero sus horas cuentan en el consumo de su contrato (la finalizada 0147-A).
+- **Presupuesto:** `hh_periodo` (HH del período) o `hh_mes`, con `periodo_inicio` y `periodo_fin`. Ritmo planificado = HH del período / meses calendario del período. Mientras falte la cifra, las columnas de plan quedan vacías.
+- **Advertencias:** las de `advertencias_omitidas` no se emiten para estas listas (vencimiento, línea base y tarea 1.2, código duplicado, lista combinada, presupuesto contractual). Un programa continuo no se marca como vencido.
+- **Pestañas** (se reemplazan completas en cada corrida; con `--solo` no se tocan):
+  - `programa_horas`: horas por mes, contrato, línea, lista y origen (`clickup` / `timetracker`).
+  - `programa_contratos`: por contrato y mes, `hh_mes`, `hh_acum`, `hh_acum_periodo`, `hh_plan_mes`, `hh_plan_acum` y `pct_consumido`; los meses posteriores al corte llevan solo el plan (`es_futuro`).
+  - `programa_entregables`: tareas cuyo nombre calza con `entregables` (informes `IM-`, visitas `VT-`), con `situacion`: `a_tiempo`, `atrasado` (cerrada después de su fecha), `vencido` (abierta y con fecha pasada), `pendiente`, `sin_fecha` o `cerrado_sin_fecha_cierre`. Las líneas de `entregables_excluir_lineas` no aportan entregables (hoy Modelos: sus IM son aportes al informe); sus horas sí cuentan en la línea.
+- **Limpieza de entregables** (advertencias para Administración DEP, llegan en `_administracion.txt`): `entregable_plantilla_sin_usar` (abierta con el número sin completar, `patron_plantilla`), `entregable_duplicado` (mismo código, p. ej. IM-02, en una lista y un contrato) y `entregable_fecha_inconsistente` (cerrada más de `dias_cierre_anticipado` días antes de su fecha de entrega).
+- La columna `programa` (en `proyectos` y en las tablas de hechos) identifica las listas de un programa: filtro `programa` vacío en las páginas de curva S.
+
+**Looker Studio:** ver `docs/looker_programas.md`.
+
 ## Estructura
 
 | Ruta | Qué es |

@@ -240,7 +240,7 @@ def test_ida_y_vuelta_de_valores():
     fila = {"corte": D(2026, 9, 20), "tipo_corte": "oficial", "es_ultimo_corte": True, "es_ultimo_oficial": True,
             "list_id": "901", "codigo": "PJ-2026.0152",
             "nombre_corto": "Evaluación estructural", "cliente": "NESTLE", "proyecto": "2026.0152 · Evaluación estructural",
-            "jp_nombre": "Ana", "jp_email": "ana@x.cl", "estado_proyecto": "en_curso", "rev_linea_base": 0,
+            "jp_nombre": "Ana", "jp_email": "ana@x.cl", "estado_proyecto": "en_curso", "programa": "CMP-SHM", "rev_linea_base": 0,
             "tiene_linea_base": True,
             "modo_calculo": "dep", **{c: 1.5 for c, _ in E.METRICAS}, "desviacion_pts": -1.1,
             "pct_presupuesto_usado": 0.4, "titular": "Avance real 73,2 % frente a 74,3 % programado: 1,1 puntos bajo el plan.",

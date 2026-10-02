@@ -84,3 +84,16 @@ def test_lista_tareas():
 
 def test_nombre_de_archivo_seguro():
     assert M.archivo('Ana/Pérez: "JP"') == "Ana_Pérez_ _JP"
+
+
+def test_administracion_incluye_advertencias_sin_metricas():
+    # Nivel programa (sin lista) y lista fuera de los folders: no tienen fila en metricas_semanales del corte
+    t = _tablas()
+    prog = {**_adv("", "programa_horas_compartidas"), "proyecto": "Monitoreo SHM CMP", "codigo": "CMP-SHM"}
+    fuera = {**_adv("9", "proyecto_fuera_de_folders"), "proyecto": "2026.0177 · Sede Chiloé", "codigo": "PJ-2026.0177",
+             "jp_nombre": "Tomás"}
+    t["advertencias"] += [prog, fuera]
+    adm = M.generar(t, C, "oficial", CFG, PLANTILLA)["_administracion.txt"]
+    assert "Monitoreo SHM CMP (JP: —)" in adm and "crea una fase por contrato" in adm
+    assert "2026.0177 · Sede Chiloé (JP: Tomás)" in adm and "devuélvela a PJ Ingeniería" in adm
+    assert "Proyectos sin JP" in adm and "Monitoreo SHM CMP" not in adm.split("Proyectos sin JP")[1]

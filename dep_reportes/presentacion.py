@@ -339,6 +339,24 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
             return (f"{d.get('n', len(d['nombres']))} paquete(s) de la línea base ya no están en la lista: "
                     + ", ".join(f"«{x}»" for x in d["nombres"][:3]) + (" …" if len(d["nombres"]) > 3 else ""))
         return "Hay paquetes de la línea base que ya no están en la lista"
+    if tipo == "programa_horas_compartidas":
+        if "horas" in d:
+            fases = ", ".join(f"«{x}»" for x in d.get("fases", [])[:3]) + (" …" if len(d.get("fases", [])) > 3 else "")
+            return (f"{d['horas']:.0f} h del programa están en fases que no son de un solo contrato ({fases}): no cuentan "
+                    "en el consumo de ningún contrato")
+        return "Hay horas del programa en fases que no son de un solo contrato: no cuentan en el consumo de ningún contrato"
+    if tipo == "entregable_plantilla_sin_usar":
+        return f"{t} parece una plantilla sin usar (número sin completar) y cuenta como entregable abierto"
+    if tipo == "entregable_duplicado":
+        if d.get("codigo"):
+            return (f"El entregable {d['codigo']} está repetido en {d.get('contrato', 'el contrato')}: "
+                    + ", ".join(f"«{x}»" for x in d.get("nombres", [])[:3]))
+        return "Hay un entregable repetido en el mismo contrato"
+    if tipo == "entregable_fecha_inconsistente":
+        if d.get("fecha_cierre") and d.get("fecha_entrega"):
+            return (f"{t} se cerró el {fecha(d['fecha_cierre'])}, {d.get('dias')} días antes de su fecha de entrega "
+                    f"({fecha(d['fecha_entrega'])}): la fecha de entrega parece errónea")
+        return f"{t} se cerró mucho antes de su fecha de entrega: la fecha parece errónea"
     if tipo == "proyecto_fuera_de_folders":
         desde = f" (último corte reportado: {fecha(d['ultimo_corte'])})" if d.get("ultimo_corte") else ""
         if d.get("eliminada"):

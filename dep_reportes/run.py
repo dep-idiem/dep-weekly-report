@@ -30,12 +30,13 @@ from dep_clickup.naming import list_code
 from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, presentacion as PR, proyecto as P
 from . import horas as H, personas as PERS, reproceso as REP, resolucion as RES
 from . import estructura as EST, finalizados as FIN, metricas as MT, plan_semanal as PS, presupuesto as PRES
+from . import programas as PG
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
 from .config_reportes import (DRY_RUN_DIR, FOLDER_PJ_INGENIERIA, FOLDER_PROYECTOS_FINALIZADOS, IMPORTADAS, RESPALDOS_DIR,
                               RETENCION_PRELIMINAR_DIAS, SHEETS_REPORTES_ID, TIME_ENTRIES_DESDE, TIMETRACKER_LIST_ID,
                               UMBRAL_HORAS_ADMINISTRACION, MINIMO_HORAS_ADMINISTRACION, PROYECCION,
-                              HORIZONTE_VENCIMIENTOS_DIAS,
+                              HORIZONTE_VENCIMIENTOS_DIAS, PROGRAMAS_JSON,
                               cortes_historicos, presupuestos)
 from .metricas import Horas, TareaMetrica
 from .modos import Modo, por_nombre
@@ -102,6 +103,7 @@ class ResultadoLista:
     plan_semanal: list = field(default_factory=list)    # filas por semana (solo agregado por proyecto)
     extra: dict = field(default_factory=dict)           # datos para el informe del dry-run
     situacion: FIN.Situacion = field(default_factory=FIN.Situacion)   # en curso o finalizado (finalizados.py)
+    programa: str = ""                  # programa de servicio continuo (programas.py) o vacio
 
 
 @dataclass
@@ -131,6 +133,8 @@ class Corrida:
     finalizados_excluidos: list = field(default_factory=list)   # listas de Proyectos Finalizados sin codigo PJ/PR
     horas_por_folder: dict = field(default_factory=dict)        # folder -> horas nativas hasta el corte
     reproceso: REP.Reproceso | None = None                     # corte oficial ya escrito: recalculo desde fotos
+    tt_historico: dict = field(default_factory=dict)           # list_id -> [(fecha, horas)] del saldo historico
+    programas: dict = field(default_factory=dict)              # programa -> resumen (programas.py)
 
 
 def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros: list[Member], corte: dt.date,
@@ -138,9 +142,11 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                    ahora: dt.datetime, codigo: str | None = None,
                    comparten_codigo: Sequence[ListInfo] = (), conteo: Conteo = Conteo(),
                    umbral_admin: float = UMBRAL_HORAS_ADMINISTRACION, presupuesto_manual: float | None = None,
-                   proyeccion: str = PROYECCION, situacion: FIN.Situacion = FIN.Situacion()) -> ResultadoLista:
+                   proyeccion: str = PROYECCION, situacion: FIN.Situacion = FIN.Situacion(),
+                   omitir: frozenset[str] = frozenset()) -> ResultadoLista:
     """situacion: en curso o finalizado. Un proyecto finalizado conserva su linea base, pero no congela una nueva
-    ni agrega filas incrementales; `corte` es el de su cierre si ya estaba congelado."""
+    ni agrega filas incrementales; `corte` es el de su cierre si ya estaba congelado. omitir: tipos de advertencia
+    que no aplican a la lista (programa de servicio continuo, programas.py)."""
     codigo = codigo or list_code(lista.name) or lista.id
     tm_manual = a_tareas_metrica(tareas)
     # Capa de porciones (estructura.py): avance del paquete desde sus porciones cuando no hay avance manual.
@@ -261,6 +267,7 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                             RES.Contexto(nombres.get(a.task_id), etiqueta, tiene_lb, a.datos)) for a in avisos]
     adv += [fila_advertencia(corte, lista.id, a.tipo, a.tarea_id, f"{a.tarea}: {a.detalle}",
                              RES.Contexto(a.tarea, etiqueta, tiene_lb, a.datos)) for a in detector]
+    adv = [a for a in adv if a["tipo"] not in omitir]
     con_hh = {t.id for t in tm if t.hh} | {f.task_id for f in lb_filas}
     return ResultadoLista(lista, codigo, jp, tareas, tm, horas, dec, lb_filas, nuevas, res,
                           P.para_hoja(adv, con_hh), adv, clases, {k: o for k, (_, o) in av.items()}, pres, filas_ps,
@@ -300,12 +307,66 @@ def aviso_fuera_de_folders(list_id: str, idn: dict, ubic: dict, corte: dt.date, 
             "estado_proyecto": FIN.FUERA_DE_FOLDERS}
 
 
+def filas_programa(p: PG.Programa, c: "Corrida", corte: dt.date, tipo_corte: str) -> dict[str, list[dict]]:
+    """Pestañas del programa (programas.py) con las horas que el reporte conto en cada lista y el saldo historico del
+    Timetracker de cada lista. Deja un resumen en c.programas."""
+    rs = [r for r in c.listas if r.lista.id in p.listas]
+    por_id = {r.lista.id: r for r in rs}
+    responsables = {r.lista.id: r.jp.username if r.jp else SIN_JP for r in rs}
+    horas: list[PG.HoraPrograma] = []
+    entregables: list[dict] = []
+    for r in rs:
+        corte_r = r.situacion.corte_cierre if r.situacion.congelado else corte
+        horas += PG.horas_de_lista(p, r.lista.id, r.tareas, [(h.fecha, h.horas, h.tarea_id) for h in r.horas
+                                                               if h.fecha <= corte_r],
+                                   c.tt_historico.get(r.lista.id, []))
+        entregables += PG.filas_entregables(p, r.lista.id, r.tareas, corte, tipo_corte, responsables[r.lista.id])
+
+    def total(pred) -> float:
+        return round(sum(h.horas for h in horas if pred(h) and h.fecha <= corte), 2)
+
+    c.programas[p.id] = {
+        "listas_faltantes": sorted(set(p.listas) - {r.lista.id for r in rs}),
+        "consumo_por_contrato": {cid: total(lambda h, cid=cid: h.contrato == cid) for cid in p.contratos},
+        "horas_compartidas": total(lambda h: h.contrato == PG.COMPARTIDO),
+        "horas_por_linea": {l: total(lambda h, l=l: h.linea == l and h.en_vista) for l in [*p.lineas, PG.HISTORIAL]},
+        "horas_solo_consumo": total(lambda h: not h.en_vista),
+        "entregables": dict(Counter(f["situacion"] for f in entregables)),
+        "contratos_sin_presupuesto": [k.id for k in p.contratos.values() if k.ritmo is None],
+    }
+    # Advertencias para Administracion DEP: horas "compartido" (nivel programa) y limpieza de entregables
+    advertencias = []
+    compartidas = PG.compartidas_por_fase(horas, corte)
+    if compartidas:
+        ident = {"codigo": p.id, "nombre_corto": p.nombre, "cliente": p.cliente, "proyecto": p.nombre,
+                 "jp_nombre": "", "jp_email": "", "estado_proyecto": FIN.EN_CURSO, "programa": p.id}
+        fases = [f for (_, f), _ in sorted(compartidas.items(), key=lambda kv: -kv[1])]
+        total_c = sum(compartidas.values())
+        detalle = (f"{total_c:.1f} h compartidas: " + "; ".join(
+            f"{f} ({por_id[lid].codigo if lid in por_id else lid}): {h:.1f} h"
+            for (lid, f), h in sorted(compartidas.items(), key=lambda kv: -kv[1])))
+        fila = fila_advertencia(corte, "", P.ADV_PROGRAMA_COMPARTIDAS, "", detalle,
+                                RES.Contexto(None, p.nombre, False, {"horas": total_c, "fases": fases}))
+        advertencias.append({**fila, **ident, "tipo_corte": tipo_corte, "nivel": P.NIVEL_PROGRAMA})
+    tipo_limpieza = {"plantilla": P.ADV_ENTREGABLE_PLANTILLA, "duplicado": P.ADV_ENTREGABLE_DUPLICADO,
+                     "fecha": P.ADV_ENTREGABLE_FECHA}
+    for x in PG.revisar_entregables(p, entregables):
+        r = por_id[x.list_id]
+        fila = fila_advertencia(corte, x.list_id, tipo_limpieza[x.tipo], x.task_id, x.detalle,
+                                RES.Contexto(x.tarea, identificacion(r)["proyecto"], False, x.datos))
+        advertencias.append({**fila, **identificacion(r), "tipo_corte": tipo_corte})
+    c.programas[p.id]["advertencias"] = dict(Counter(a["tipo"] for a in advertencias))
+    return {"programa_horas": PG.filas_horas(p, horas, corte, tipo_corte, responsables),
+            "programa_contratos": PG.filas_contratos(p, horas, corte, tipo_corte),
+            "programa_entregables": entregables, "advertencias": advertencias}
+
+
 def identificacion(r: ResultadoLista) -> dict:
     nombre_corto, cliente, _ = PR.partes_nombre(r.lista.name)
     return {"codigo": r.codigo, "nombre_corto": nombre_corto, "cliente": cliente,
             "proyecto": PR.etiqueta_proyecto(r.codigo, nombre_corto),
             "jp_nombre": r.jp.username if r.jp else SIN_JP, "jp_email": r.jp.email if r.jp else "",
-            "estado_proyecto": r.situacion.estado}
+            "estado_proyecto": r.situacion.estado, "programa": r.programa}
 
 
 def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
@@ -458,6 +519,8 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
     bases_todas = Counter(base_de(l) for l in cu_listas_todas)
     manuales = cortes_historicos()
     presupuestos_manuales = presupuestos()
+    programas = PG.cargar(PROGRAMAS_JSON)
+    programa_de = PG.por_lista(programas)
     oficial = tipo_corte == E.OFICIAL
     cierres_exist = {f["list_id"]: f for f in existentes.get("cierres", [])}
     en_curso_antes = FIN.cortes_en_curso(existentes.get("metricas_semanales", []))
@@ -477,15 +540,20 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
                         len(previas), sum(e.hours for e in previas),
                         max((x.fecha for x in regs if x.fecha <= limite_hist), default=None))
         corrida.conteos[lista.id] = conteo
+        if regs:
+            corrida.tt_historico[lista.id] = [(x.fecha, x.horas) for x in regs if x.fecha <= limite_hist]
         contadas = [e for e in por_lista.get(lista.id, []) if not (regs and ch and e.date < ch) and e.date <= corte_l]
         folder = "Proyectos Finalizados" if sit.finalizado else "PJ Ingeniería"
         corrida.horas_por_folder[folder] = corrida.horas_por_folder.get(folder, 0.0) + sum(e.hours for e in contadas)
         tareas = cu.list_tasks(lista.id)
-        corrida.listas.append(procesar_lista(lista, tareas, contadas, miembros, corte_l, modo,
-                                             lb_exist, lista.id in observadas, corrida.primera_corrida, ahora,
-                                             asig.codigos[lista.id], comparten.get(lista.id, ()), conteo,
-                                             presupuesto_manual=presupuestos_manuales.get(asig.codigos[lista.id]),
-                                             situacion=sit))
+        prog = programa_de.get(lista.id)
+        r = procesar_lista(lista, tareas, contadas, miembros, corte_l, modo,
+                           lb_exist, lista.id in observadas, corrida.primera_corrida, ahora,
+                           asig.codigos[lista.id], comparten.get(lista.id, ()), conteo,
+                           presupuesto_manual=presupuestos_manuales.get(asig.codigos[lista.id]),
+                           situacion=sit, omitir=prog.advertencias_omitidas if prog else frozenset())
+        r.programa = prog.id if prog else ""
+        corrida.listas.append(r)
     corrida.segundos_clickup = time.monotonic() - t0
     corrida.peticiones_clickup = dict(cu.request_log)
 
@@ -494,6 +562,10 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
         corte_r = r.situacion.corte_cierre if r.situacion.congelado else corte
         for t, filas in filas_de(r, corte_r, modo, ahora, tipo_corte).items():
             nuevas[t] += filas
+    if not solo:
+        for p in programas.values():
+            for t, filas in filas_programa(p, corrida, corte, tipo_corte).items():
+                nuevas[t] += filas
     n_lb = len({(f["list_id"], f["rev"]) for f in nuevas["linea_base"] if f["tipo"] != "incremental"})
     n_inc = sum(1 for f in nuevas["linea_base"] if f["tipo"] == "incremental")
     nuevas["ejecuciones"] = [{"ejecutado_en": ahora, "corte": corte, "tipo_corte": tipo_corte,
@@ -691,6 +763,7 @@ def _escribir_resumen(c: Corrida, ruta) -> None:
                        for r in c.listas if r.situacion.finalizado},
             "cierres_nuevos": len(c.nuevas.get("cierres", [])),
         },
+        "programas": c.programas,
     }
     ruta.write_text(json.dumps(resumen, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
 
@@ -745,6 +818,12 @@ def imprimir(c: Corrida, dry_run: bool) -> None:
         est = "" if not r.situacion.finalizado else f"  [finalizado: {r.situacion.tipo_cierre}" + (
             f", congelado al {r.situacion.corte_cierre}]" if r.situacion.congelado else "]")
         print(f"  {r.codigo:<20} JP={r.jp.username if r.jp else SIN_JP:<28} LB={lb:<22} avance prog={_f(m['avance_prog'])} real={_f(m['avance_real'])}{est}")
+    for pid, s in c.programas.items():
+        print(f"  Programa {pid}: consumo por contrato {s['consumo_por_contrato']} h; compartidas {s['horas_compartidas']} h; "
+              f"por línea {s['horas_por_linea']} h; solo consumo {s['horas_solo_consumo']} h; entregables {s['entregables']}; "
+              f"advertencias {s.get('advertencias', {})}"
+              + (f"; LISTAS FALTANTES {s['listas_faltantes']}" if s["listas_faltantes"] else "")
+              + (f"; sin presupuesto: {', '.join(s['contratos_sin_presupuesto'])}" if s["contratos_sin_presupuesto"] else ""))
     for f in c.fallos:
         print(f"  CONTROL FALLIDO: {f}")
     if dry_run:

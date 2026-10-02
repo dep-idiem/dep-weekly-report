@@ -255,6 +255,30 @@ CATALOGO.update({
         INFORMATIVA, INFORMATIVA, INFORMATIVA,
         lambda c, a: f"No requiere acción. Si {_l(c)} no terminó, vuelve a mover la lista a PJ Ingeniería: en el "
                      "siguiente corte vuelve a quedar en curso y su cierre se borra."),
+    "programa_horas_compartidas": Entrada(
+        "Horas de un programa de servicio continuo registradas en fases que no son de un solo contrato (calzan con "
+        "varios o con ninguno): aparecen en las horas por línea, pero no en el consumo de ningún contrato.",
+        ADMIN, DISTORSIONA, DISTORSIONA,
+        lambda c, a: f"Revisa con la planificadora las fases de {_l(c)} que reciben estas horas: crea una fase por "
+                     "contrato o mueve las tareas a la fase del contrato que corresponde."),
+    "entregable_plantilla_sin_usar": Entrada(
+        "Un entregable de un programa (informe o visita) tiene el número sin completar («N°x»): es una plantilla que "
+        "quedó abierta y cuenta como entregable pendiente o vencido.",
+        ADMIN, DISTORSIONA, DISTORSIONA,
+        lambda c, a: f"En ClickUp, completa {_t(c)} con su número y fecha reales o márcala como No Aplica si no se va "
+                     "a usar."),
+    "entregable_duplicado": Entrada(
+        "El mismo código de entregable (por ejemplo IM-02) aparece en más de una tarea de un contrato: el conteo de "
+        "entregables queda duplicado.",
+        ADMIN, DISTORSIONA, DISTORSIONA,
+        lambda c, a: f"En ClickUp, corrige el código de las tareas repetidas de {_l(c)} para que cada entregable tenga "
+                     "uno propio, o elimina la que sobra."),
+    "entregable_fecha_inconsistente": Entrada(
+        "Un entregable se cerró mucho antes de su fecha de entrega (más días que dias_cierre_anticipado de la "
+        "configuración del programa): la fecha de entrega probablemente está mal cargada.",
+        ADMIN, DISTORSIONA, DISTORSIONA,
+        lambda c, a: f"En ClickUp, revisa la fecha de entrega de {_t(c)} y corrígela si no corresponde al período "
+                     "del informe."),
     "proyecto_fuera_de_folders": Entrada(
         "La lista tiene filas en la hoja pero ya no está en PJ Ingeniería ni en Proyectos Finalizados (se movió a otro "
         "folder o espacio, se archivó o se eliminó): el proyecto deja de reportarse y su historial queda con "

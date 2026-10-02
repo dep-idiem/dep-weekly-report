@@ -1,0 +1,50 @@
+{
+  "_doc": "Programas de servicio continuo (dep_reportes/programas.py): proyectos largos sin curva S que se reportan por contrato y por línea. Cada lista tiene una línea; el contrato se fija por lista (\"contrato\") o se deduce del nombre de su fase con contratos.<id>.patron_fase (si calza con más de un contrato o con ninguno, la hora queda como \"compartido\"). solo_consumo: la lista no entra a la vista (horas por línea ni entregables), pero sus horas cuentan en el consumo de su contrato. Presupuesto: hh_periodo (HH del período) o hh_mes; ritmo planificado = hh_periodo / meses del período.",
+  "programas": {
+    "CMP-SHM": {
+      "nombre": "Monitoreo SHM CMP",
+      "cliente": "CMP",
+      "contratos": {
+        "0019": {
+          "nombre": "Monitoreo Salud Estructural Los Colorados",
+          "codigo": "PJ-2025.0019",
+          "patron_fase": "0019|MLC|Colorados",
+          "presupuesto": {"hh_periodo": null, "hh_mes": null, "periodo_inicio": "2025-03-31", "periodo_fin": "2026-10-20",
+                          "_pendiente": "cifra de HH contratadas y si es anual o mensual (Ale, 2026-10-02)"}
+        },
+        "0147": {
+          "nombre": "Monitoreo Apilador móvil",
+          "codigo": "PJ-2025.0147",
+          "patron_fase": "0147|Apilador",
+          "presupuesto": {"hh_periodo": null, "hh_mes": null, "periodo_inicio": "2025-08-04", "periodo_fin": "2026-10-20",
+                          "_pendiente": "cifra de HH contratadas y si es anual o mensual (Ale, 2026-10-02)"}
+        }
+      },
+      "lineas": {
+        "general": "General",
+        "informes": "Informes",
+        "modelos": "Modelos"
+      },
+      "listas": [
+        {"list_id": "901326875156", "linea": "general", "contrato": "0019", "_nombre": "PJ-2025.0019 Monitoreo Salud Estructural Los Colorados"},
+        {"list_id": "901327109633", "linea": "general", "contrato": "0147", "_nombre": "PJ-2025.0147 Monitoreo Apilador móvil"},
+        {"list_id": "901327788557", "linea": "informes", "_nombre": "PJ-2025.0019-0147 Desarrollo Informes"},
+        {"list_id": "901327789240", "linea": "modelos", "_nombre": "PJ-2025.0019-0147 Calibración y Ajustes en Modelos"},
+        {"list_id": "901327789183", "linea": "general", "contrato": "0147", "solo_consumo": true, "_nombre": "PJ-2025.0147 Diagnóstico Monitoreo Apilador móvil (finalizada)"}
+      ],
+      "entregables": {
+        "informe": "^\\s*IM-\\d",
+        "visita": "^\\s*VT-\\d"
+      },
+      "entregables_excluir_lineas": ["modelos"],
+      "_entregables_excluir_lineas": "las tareas IM de Modelos son aportes al informe, no entregables (Ale, 2026-10-02); sacar \"modelos\" para incluirlas",
+      "patron_plantilla": "N[°º]\\s*[a-z]\\b",
+      "dias_cierre_anticipado": 30,
+      "advertencias_omitidas": [
+        "proyecto_con_termino_vencido", "sin_termino_vigente", "horas_fuera_de_plazo",
+        "en_planificacion", "sin_tarea_1_2", "tarea_1_2_no_aplica", "varias_tareas_1_2", "linea_base_sin_hh",
+        "codigo_duplicado_en_clickup", "lista_combinada", "fase_de_otro_proyecto", "sin_presupuesto_contractual"
+      ]
+    }
+  }
+}

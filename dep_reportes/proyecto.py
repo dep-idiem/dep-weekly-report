@@ -51,6 +51,12 @@ ADV_PAQUETE_DESAPARECIDO = "paquete_desaparecido"
 ADV_FASE_CON_HH = "fase_con_hh"
 ADV_PROYECTO_FINALIZADO = "proyecto_finalizado"     # la lista esta en Proyectos Finalizados (finalizados.py)
 ADV_FUERA_DE_FOLDERS = "proyecto_fuera_de_folders"  # filas en la hoja, pero la lista ya no esta en ninguno de los dos folders
+# Programas de servicio continuo (programas.py): para Administracion DEP
+ADV_PROGRAMA_COMPARTIDAS = "programa_horas_compartidas"      # nivel programa (sin lista)
+ADV_ENTREGABLE_PLANTILLA = "entregable_plantilla_sin_usar"
+ADV_ENTREGABLE_DUPLICADO = "entregable_duplicado"
+ADV_ENTREGABLE_FECHA = "entregable_fecha_inconsistente"
+NIVEL_PROGRAMA = "programa"
 
 # Advertencias de nivel proyecto: se escriben siempre en la hoja (decision 2 de la fase 2). Las demas solo
 # si son de una tarea con HH Presupuestadas; el detalle completo queda en calidad_datos.md.

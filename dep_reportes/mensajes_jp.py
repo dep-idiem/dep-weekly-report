@@ -102,10 +102,18 @@ def mensaje_jp(jp: str, proyectos: Sequence[Proyecto], nombres, corte: dt.date, 
     ).rstrip() + "\n"
 
 
-def mensaje_administracion(proyectos: Sequence[Proyecto], corte: dt.date, adm: str) -> str:
+def mensaje_administracion(proyectos: Sequence[Proyecto], corte: dt.date, adm: str,
+                           sueltas: Sequence[dict] = ()) -> str:
+    """sueltas: advertencias del corte sin fila en metricas_semanales (nivel programa, listas fuera de los folders);
+    se agrupan por su etiqueta de proyecto."""
     lineas = [f"Pendientes de {adm} (datos al {PR.fecha(corte)})", ""]
     n = 0
-    for p in sorted(proyectos, key=lambda p: p.codigo):
+    grupos: dict[str, Proyecto] = {}
+    for a in sueltas:
+        et = a.get("proyecto") or a.get("codigo") or a.get("list_id") or "?"
+        grupos.setdefault(et, Proyecto(a.get("list_id") or "", a.get("codigo") or et, et,
+                                       a.get("jp_nombre") or "—", False)).advertencias.append(a)
+    for p in sorted([*proyectos, *grupos.values()], key=lambda p: p.codigo):
         ps = list(dict.fromkeys(a["como_resolver"] for a in p.advertencias
                                 if a.get("responsable_accion") == adm and a.get("como_resolver")))
         if ps:
@@ -121,6 +129,13 @@ def mensaje_administracion(proyectos: Sequence[Proyecto], corte: dt.date, adm: s
         lineas += [f"  - {p.etiqueta}" for p in sorted(sin_jp, key=lambda p: p.codigo)]
         lineas.append("")
     return "\n".join(lineas).rstrip() + "\n"
+
+
+def advertencias_sueltas(tablas: dict[str, list[dict]], corte: dt.date, tipo_corte: str) -> list[dict]:
+    """Advertencias del corte cuya lista no tiene fila en metricas_semanales de ese corte."""
+    del_corte = lambda f: f.get("corte") == corte and (f.get("tipo_corte") or E.OFICIAL) == tipo_corte
+    con_metricas = {f["list_id"] for f in tablas.get("metricas_semanales", []) if del_corte(f)}
+    return [a for a in tablas.get("advertencias", []) if del_corte(a) and a.get("list_id") not in con_metricas]
 
 
 def proyectos_del_corte(tablas: dict[str, list[dict]], corte: dt.date, tipo_corte: str) -> list[Proyecto]:
@@ -160,7 +175,8 @@ def generar(tablas: dict[str, list[dict]], corte: dt.date, tipo_corte: str, cfg:
         if p.jp != SIN_JP:
             por_jp[p.jp].append(p)
     out = {f"{archivo(jp)}.txt": mensaje_jp(jp, ps, nombres, corte, plantilla, cfg) for jp, ps in sorted(por_jp.items())}
-    out["_administracion.txt"] = mensaje_administracion(proyectos, corte, adm)
+    out["_administracion.txt"] = mensaje_administracion(proyectos, corte, adm,
+                                                        advertencias_sueltas(tablas, corte, tipo_corte))
     return out
 
 

@@ -120,7 +120,7 @@ def fila_cierre(*, list_id: str, ident: Mapping, sit: Situacion, metricas: Mappi
     contrato = presupuesto.get("hh_contrato")
     return {
         "list_id": list_id, **{k: ident.get(k) for k in ("codigo", "nombre_corto", "cliente", "proyecto",
-                                                         "jp_nombre", "jp_email")},
+                                                         "jp_nombre", "jp_email", "programa")},
         "estado_proyecto": FINALIZADO, "tipo_cierre": sit.tipo_cierre, "corte_cierre": sit.corte_cierre,
         "ultimo_corte_en_curso": sit.ultimo_corte_en_curso,
         "fecha_inicio": fecha_inicio, "fecha_ultima_hora": fecha_ultima_hora,

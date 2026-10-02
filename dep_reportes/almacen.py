@@ -129,6 +129,8 @@ def fusionar(tabla: str, existentes: Sequence[dict], nuevas: Sequence[dict], cor
     - fotos_tareas solo cambia en corridas oficiales.
     """
     en_alcance = (lambda f: True) if alcance is None else (lambda f: f.get("list_id") in alcance)
+    if tabla in E.PROGRAMAS:
+        return list(existentes) if alcance is not None else list(nuevas)
     if tabla in E.REEMPLAZO_TOTAL:
         return [f for f in existentes if not en_alcance(f)] + list(nuevas)
     if tabla in E.SOLO_OFICIAL:
@@ -176,7 +178,7 @@ def completar(tabla: str, filas: Sequence[dict], ident: dict[str, dict],
                 continue
             if f.get("codigo") is None:
                 f.update(i)
-            f.update({c: i[c] for c in ("codigo", *(c for c, _ in E.PRESENTACION)) if c in i})
+            f.update({c: i[c] for c in ("codigo", *(c for c, _ in E.PRESENTACION), "programa") if c in i})
     if tabla in E.CON_ESTADO:
         # estado_proyecto sigue a la lista: al finalizar, todo su historial queda como finalizado (filtro de Looker).
         for f in filas:

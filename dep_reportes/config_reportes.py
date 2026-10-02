@@ -15,6 +15,7 @@ SHEETS_REPORTES_ID = os.getenv("SHEETS_REPORTES_ID", "")
 DRY_RUN_DIR = ROOT / "reportes" / "dry_run"
 RESPALDOS_DIR = ROOT / "reportes" / "respaldos"
 TIME_ENTRIES_DESDE = dt.date(2024, 1, 1)
+PROGRAMAS_JSON = ROOT / "config" / "programas.json"      # programas de servicio continuo (programas.py)
 
 
 def parametros() -> dict:
