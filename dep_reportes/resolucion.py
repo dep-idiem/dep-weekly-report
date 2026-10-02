@@ -162,6 +162,24 @@ CATALOGO: dict[str, Entrada] = {
         JP, INFORMATIVA, INFORMATIVA, _nombre_sin_formato),
 }
 
+def _compartidas(c: Contexto, adm: str) -> str:
+    d = c.datos or {}
+    fases = d.get("fases") or []
+    cuanto = f"las {PR.num(d['horas'])} h" if "horas" in d else "las horas"
+    donde = (f" («{_corto(fases[0], 'fase')[:29].rstrip('…') + ('…' if len(fases[0]) > 29 else '')}»" + (f" y {len(fases) - 1} más" if len(fases) > 1 else "") + ")"
+             if fases else "")
+    return (f"Revisa con la planificadora {cuanto} de {_l(c)} en fases de varios contratos{donde}: crea una fase "
+            "por contrato o muévelas a la suya.")
+
+
+def _duplicado(c: Contexto, adm: str) -> str:
+    d = c.datos or {}
+    if d.get("codigo"):
+        return (f"En ClickUp, corrige las tareas {d['codigo']} repetidas en {_corto(d.get('contrato'), 'el contrato')}: "
+                "deja un código por entregable o elimina la que sobra.")
+    return f"En ClickUp, corrige las tareas repetidas de {_l(c)}: deja un código por entregable o elimina la que sobra."
+
+
 def _tt_sin_clickup(c: Contexto, adm: str) -> str:
     d = c.datos or {}
     cuanto = f"las {PR.num(d['horas'])} h" if "horas" in d else "las horas"
@@ -258,9 +276,7 @@ CATALOGO.update({
     "programa_horas_compartidas": Entrada(
         "Horas de un programa de servicio continuo registradas en fases que no son de un solo contrato (calzan con "
         "varios o con ninguno): aparecen en las horas por línea, pero no en el consumo de ningún contrato.",
-        ADMIN, DISTORSIONA, DISTORSIONA,
-        lambda c, a: f"Revisa con la planificadora las fases de {_l(c)} que reciben estas horas: crea una fase por "
-                     "contrato o mueve las tareas a la fase del contrato que corresponde."),
+        ADMIN, DISTORSIONA, DISTORSIONA, _compartidas),
     "entregable_plantilla_sin_usar": Entrada(
         "Un entregable de un programa (informe o visita) tiene el número sin completar («N°x»): es una plantilla que "
         "quedó abierta y cuenta como entregable pendiente o vencido.",
@@ -270,9 +286,7 @@ CATALOGO.update({
     "entregable_duplicado": Entrada(
         "El mismo código de entregable (por ejemplo IM-02) aparece en más de una tarea de un contrato: el conteo de "
         "entregables queda duplicado.",
-        ADMIN, DISTORSIONA, DISTORSIONA,
-        lambda c, a: f"En ClickUp, corrige el código de las tareas repetidas de {_l(c)} para que cada entregable tenga "
-                     "uno propio, o elimina la que sobra."),
+        ADMIN, DISTORSIONA, DISTORSIONA, _duplicado),
     "entregable_fecha_inconsistente": Entrada(
         "Un entregable se cerró mucho antes de su fecha de entrega (más días que dias_cierre_anticipado de la "
         "configuración del programa): la fecha de entrega probablemente está mal cargada.",

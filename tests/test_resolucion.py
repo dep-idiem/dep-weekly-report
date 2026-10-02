@@ -85,3 +85,12 @@ def test_guia_al_dia():
     guia = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(guia)
     assert (raiz / "docs" / "guia_advertencias.md").read_text(encoding="utf-8") == guia.generar()
+
+
+def test_textos_de_programa_concretos_y_cortos():
+    largo = "X" * 80
+    comp = RES.resolver("programa_horas_compartidas",
+                        RES.Contexto(None, largo, False, {"horas": 12345.6, "fases": [largo] * 3}))["como_resolver"]
+    assert len(comp) <= 220 and "12345,6 h" in comp
+    dup = RES.resolver("entregable_duplicado", RES.Contexto(None, "x", False, {"codigo": "IM-02", "contrato": "Apilador"}))
+    assert "IM-02" in dup["como_resolver"] and "Apilador" in dup["como_resolver"]
