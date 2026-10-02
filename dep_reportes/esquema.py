@@ -114,7 +114,7 @@ CLAVES = {
     "fotos_tareas": ("corte", "list_id", "task_id"),
     "serie_diaria": ("list_id", "fecha"),
     "advertencias": ("corte", "tipo_corte", "list_id", "tipo", "task_id", "detalle"),
-    "ejecuciones": ("ejecutado_en",),
+    "ejecuciones": ("ejecutado_en", "corte", "modo"),   # un reproceso escribe varias filas con la misma hora
     "plan_semanal": ("corte", "tipo_corte", "list_id", "semana"),
     "cierres": ("list_id",),
 }

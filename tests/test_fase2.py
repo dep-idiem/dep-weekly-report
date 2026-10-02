@@ -292,6 +292,13 @@ def test_duplicados():
     C = D(2026, 9, 20)
     assert A.duplicados("metricas_semanales", [{"corte": C, "list_id": "1"}, {"corte": C, "list_id": "2"}]) == 0
     assert A.duplicados("metricas_semanales", [{"corte": C, "list_id": "1"}, {"corte": C, "list_id": "1"}]) == 1
+    # Un reproceso escribe varias filas de ejecuciones con la misma hora (reproceso_omitido + marcas)
+    t = "2026-10-02 08:59:07"
+    rep = [{"ejecutado_en": t, "corte": D(2026, 9, 27), "modo": "reproceso_fotos"},
+           {"ejecutado_en": t, "corte": D(2026, 9, 20), "modo": "marca"},
+           {"ejecutado_en": t, "corte": D(2026, 9, 27), "modo": "marca"}]
+    assert A.duplicados("ejecuciones", rep) == 0
+    assert A.duplicados("ejecuciones", rep + rep[:1]) == 1
 
 
 def test_identificacion_en_tablas_de_hechos():
