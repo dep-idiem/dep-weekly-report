@@ -27,20 +27,23 @@ CORTE = [("tipo_corte", TEXTO), ("es_ultimo_corte", BOOLEANO), ("es_ultimo_ofici
 
 # hh_gastadas_acum = hh_historicas (saldo del Timetracker) + horas nativas de ClickUp (horas.py).
 # hh_estimadas_al_termino: la curva proyectada hasta el ultimo pendiente; hh_estimadas_a_entrega: su valor en la
-# fecha de entrega contractual de la linea base (vacio si ya paso o no hay linea base).
+# fecha de termino vigente (vencimiento de la lista; vacio si ya paso o no hay linea base).
 METRICAS = [("total_hh", NUMERO), ("hh_prog_acum", NUMERO), ("hh_gastadas_acum", NUMERO), ("hh_historicas", NUMERO),
             ("avance_prog", NUMERO),
             ("avance_real", NUMERO), ("ev", NUMERO), ("spi", NUMERO), ("cpi", NUMERO),
             ("hh_estimadas_al_termino", NUMERO), ("hh_estimadas_termino_plan_semanal", NUMERO),
             ("hh_estimadas_a_entrega", NUMERO),
             ("hh_actuales_clickup", NUMERO)]
+PLAZO = [("fecha_entrega_contractual", FECHA), ("es_extension", BOOLEANO), ("dias_extension", ENTERO)]
 
 TABLAS: dict[str, list[tuple[str, str]]] = {
+    # Plazo (presentacion.extension_plazo): entrega contractual de la linea base vigente frente al termino vigente de la
+    # lista; es_extension si el termino vigente es posterior y dias_extension en dias habiles (negativo si se adelanto).
     "proyectos": [("list_id", TEXTO), ("codigo", TEXTO)] + PRESENTACION + [("nombre", TEXTO), ("jp_nombre", TEXTO),
                   ("jp_email", TEXTO),
                   ("estado_lista", TEXTO), ("fecha_inicio", FECHA), ("fecha_termino_vigente", FECHA),
                   ("estado_linea_base", TEXTO), ("rev_vigente", ENTERO), ("actualizado_en", FECHA_HORA)]
-                 + ESTADO + [("corte_cierre", FECHA)] + PROGRAMA,
+                 + ESTADO + [("corte_cierre", FECHA)] + PROGRAMA + PLAZO,
     "linea_base": [("list_id", TEXTO), ("rev", ENTERO), ("tipo", TEXTO), ("fecha_captura", FECHA_HORA), ("motivo", TEXTO),
                    ("fecha_inicio", FECHA), ("fecha_entrega_contractual", FECHA), ("task_id", TEXTO),
                    ("task_nombre", TEXTO), ("fase", TEXTO), ("hh", NUMERO), ("start", FECHA), ("due", FECHA)],
@@ -56,7 +59,8 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                              ("delta_desviacion_pts", NUMERO), ("delta_hh_gastadas", NUMERO), ("semaforo", TEXTO)]
                           # Reproceso (reproceso.py): termino con que se repartieron los pendientes (insumo del reproceso
                           # desde fotos) y, si el corte se recalculo con datos posteriores a su primera escritura, cuando.
-                          + [("fecha_termino_usada", FECHA), ("reprocesado_en", FECHA_HORA)],
+                          + [("fecha_termino_usada", FECHA), ("reprocesado_en", FECHA_HORA)]
+                          + PLAZO,
     "metricas_fase": [("corte", FECHA)] + CORTE + [("list_id", TEXTO)] + IDENT
                      + [("fase", TEXTO), ("hh_linea_base", NUMERO), ("hh_prog_acum", NUMERO),
                         ("hh_gastadas_acum", NUMERO), ("avance_real", NUMERO)],

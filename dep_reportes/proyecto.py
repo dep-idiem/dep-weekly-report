@@ -166,7 +166,7 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
     desde_historico: fecha del corte historico (si es posterior al corte, la serie parte en el corte).
     pendientes_plan: proyeccion por plan semanal (plan_semanal.py): paquete -> HH por dia de sus porciones futuras.
         Esos paquetes usan ese reparto en vez del uniforme; los demas, el uniforme.
-    entrega: fecha de entrega contractual de la linea base. hh_estimadas_al_termino llega hasta el ultimo pendiente;
+    entrega: fecha de termino vigente (vencimiento de la lista). hh_estimadas_al_termino llega hasta el ultimo pendiente;
         hh_estimadas_a_entrega es el valor de la curva proyectada en esta fecha (vacio si ya paso o no hay linea base).
     """
     cal = modo.cal
@@ -248,7 +248,7 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
         base = horas_ord.hasta(puntos[-1], inclusive=False) if puntos else 0.0
     estimadas = hh_historicas + base + sum(pend_diario.values())
     gastadas_total = hh_historicas + gastadas
-    # Valor de la curva proyectada en la entrega contractual de la linea base (si la entrega ya paso, la curva
+    # Valor de la curva proyectada en la fecha de entrega (si la entrega ya paso, la curva
     # proyectada no existe en esa fecha: vacio).
     a_entrega = hh_historicas + base + pend.hasta(entrega) if (lb is not None and entrega and entrega >= control) else None
 

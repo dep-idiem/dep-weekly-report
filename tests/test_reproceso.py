@@ -135,7 +135,7 @@ def fila_guardada(**kw):
     tm = [T(f["task_id"], f["start"], f["due"], f["hh"], f["avance_real"], f["parent_id"] or None, f["estado"]) for f in FOTOS]
     horas = [Horas(D(2026, 9, 10), 30.0, "a"), Horas(D(2026, 9, 24), 12.5, "b")]
     lb_t, fase_lb = LB.a_tareas(LB_ROWS)
-    r = P.calcular(lb_t, tm, horas, CORTE, D(2026, 10, 9), DEP, fase_lb, hh_historicas=5.0, entrega=D(2026, 10, 2))
+    r = P.calcular(lb_t, tm, horas, CORTE, D(2026, 10, 9), DEP, fase_lb, hh_historicas=5.0, entrega=D(2026, 10, 9))
     fila = {"corte": CORTE, "tipo_corte": "oficial", "list_id": "L1", "codigo": "PJ-1", "rev_linea_base": 0,
             "modo_calculo": "dep", **{c: r.metricas.get(c) for c, _ in E.METRICAS}, "hh_contrato": 300.0,
             "fecha_termino_usada": D(2026, 10, 9)}

@@ -248,7 +248,8 @@ def test_ida_y_vuelta_de_valores():
             "semanas_restantes_al_ritmo": 14.5, "fecha_agotamiento_estimada": D(2027, 1, 12),
             "dias_habiles_para_entrega": 12, "delta_avance_real": 0.021, "delta_avance_prog": 0.03, "delta_desviacion_pts": -0.9,
             "delta_hh_gastadas": 41.5, "semaforo": "verde", "fecha_termino_usada": D(2026, 10, 2),
-            "reprocesado_en": dt.datetime(2026, 9, 25, 15, 37, 26, tzinfo=TZ)}
+            "reprocesado_en": dt.datetime(2026, 9, 25, 15, 37, 26, tzinfo=TZ),
+            "fecha_entrega_contractual": D(2026, 10, 2), "es_extension": True, "dias_extension": 1}
     ti = E.tipos("metricas_semanales")
     valores = [E.columnas("metricas_semanales"), [A.celda_sheets(fila[c], ti[c]) for c in E.columnas("metricas_semanales")]]
     assert A.filas_desde_valores("metricas_semanales", valores) == [fila]

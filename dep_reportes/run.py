@@ -216,8 +216,8 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     fin = lista.due.date() if lista.due else None
     plan = EST.plan_porciones(tareas, clases)
     pend_plan = PS.pendientes_por_paquete(plan, corte, modo.cal)
-    entrega = next((f.fecha_entrega_contractual for f in lb_filas if f.fecha_entrega_contractual), None)
-    comun = dict(hh_historicas=conteo.hh_historicas, desde_historico=conteo.corte_historico, entrega=entrega)
+    # hh_estimadas_a_entrega: en el termino vigente (si el plazo se extiende, la entrega es la nueva fecha).
+    comun = dict(hh_historicas=conteo.hh_historicas, desde_historico=conteo.corte_historico, entrega=fin)
     res = P.calcular(lb_tareas, tm, horas, corte, fin, modo, fase_lb, **comun,
                      pendientes_plan=pend_plan if proyeccion == "plan_semanal" else None)
     avisos += res.avisos
@@ -375,6 +375,10 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
     rev = r.lb_filas[0].rev if r.lb_filas else None
     mt = r.resultado.metricas
     idn = identificacion(r)
+    vigente = r.lista.due.date() if r.lista.due else None
+    contractual = next((f.fecha_entrega_contractual for f in r.lb_filas if f.fecha_entrega_contractual), None)
+    es_ext, dias_ext = PR.extension_plazo(contractual, vigente, modo.cal)
+    plazo = {"fecha_entrega_contractual": contractual, "es_extension": es_ext, "dias_extension": dias_ext}
     out: dict[str, list[dict]] = defaultdict(list)
     out["proyectos"].append({
         "list_id": lid, "nombre": r.lista.name, **idn,
@@ -383,7 +387,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
         "fecha_termino_vigente": r.lista.due.date() if r.lista.due else None,
         "estado_linea_base": "vigente" if r.lb_filas else "sin_linea_base",
         "rev_vigente": rev, "actualizado_en": ahora,
-        "estado_proyecto": r.situacion.estado, "corte_cierre": r.situacion.corte_cierre,
+        "estado_proyecto": r.situacion.estado, "corte_cierre": r.situacion.corte_cierre, **plazo,
     })
     tc = {"corte": corte, "tipo_corte": tipo_corte}
     sit = r.situacion
@@ -409,7 +413,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
                "hh_estimadas_termino_plan_semanal": r.extra.get("hh_estimadas_plan_semanal"),
                "fecha_termino_usada": mt.get("fecha_termino_usada"),
                "dias_habiles_para_entrega": PR.dias_habiles_para_entrega(
-                   corte, r.lista.due.date() if r.lista.due else None, modo.cal)}
+                   corte, r.lista.due.date() if r.lista.due else None, modo.cal), **plazo}
     motivo = None if r.lb_filas else PR.motivo_sin_linea_base(a["tipo"] for a in r.advertencias_todas)
     out["metricas_semanales"].append(semanal | PR.derivadas_semanales(semanal, motivo))
     out["metricas_fase"] += [{**tc, "list_id": lid, **idn, **f} for f in r.resultado.fases]

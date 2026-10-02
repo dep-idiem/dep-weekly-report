@@ -145,6 +145,22 @@ def dias_habiles_para_entrega(corte: dt.date, entrega: dt.date | None, cal) -> i
     return -max(1, cal.networkdays(entrega, corte - dt.timedelta(days=1)))
 
 
+
+def extension_plazo(contractual: dt.date | None, vigente: dt.date | None, cal) -> tuple[bool | None, int | None]:
+    """(es_extension, dias_extension) del termino vigente (vencimiento de la lista en ClickUp) frente a la entrega
+    contractual de la linea base, en dias habiles del calendario del modo.
+
+    - vigente > contractual: extension; dias habiles de contractual + 1 a vigente, ambos incluidos.
+    - vigente < contractual (plazo adelantado): no es extension; dias negativos.
+    - iguales: (False, 0). Sin linea base o sin termino vigente: vacio."""
+    if contractual is None or vigente is None:
+        return None, None
+    if vigente > contractual:
+        return True, cal.networkdays(contractual + dt.timedelta(days=1), vigente)
+    if vigente < contractual:
+        return False, -cal.networkdays(vigente, contractual - dt.timedelta(days=1))
+    return False, 0
+
 # Deltas frente al corte oficial anterior: columna del delta -> columna de origen.
 DELTAS = {"delta_avance_real": "avance_real", "delta_avance_prog": "avance_prog",
           "delta_desviacion_pts": "desviacion_pts", "delta_hh_gastadas": "hh_gastadas_acum"}

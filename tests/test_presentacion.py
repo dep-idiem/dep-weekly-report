@@ -233,3 +233,24 @@ def test_dias_habiles_para_entrega(entrega, esperado):
     from dep_reportes.calendario import Calendario
     cal = Calendario(frozenset({dt.date(2026, 10, 5)}))        # un feriado ficticio
     assert PR.dias_habiles_para_entrega(dt.date(2026, 9, 27), entrega, cal) == esperado
+
+
+@pytest.mark.parametrize("contractual, vigente, esperado", [
+    (None, dt.date(2026, 10, 5), (None, None)),                          # sin linea base
+    (dt.date(2026, 10, 2), None, (None, None)),                          # lista sin vencimiento
+    (dt.date(2026, 10, 2), dt.date(2026, 10, 2), (False, 0)),
+    (dt.date(2026, 10, 2), dt.date(2026, 10, 5), (True, 1)),             # viernes -> lunes: 1 habil
+    (dt.date(2026, 10, 2), dt.date(2026, 10, 9), (True, 4)),             # una semana menos el feriado ficticio del 6-10
+    (dt.date(2026, 10, 2), dt.date(2026, 10, 3), (True, 0)),             # a un sabado: extension sin dias habiles
+    (dt.date(2026, 10, 9), dt.date(2026, 10, 2), (False, -4)),           # plazo adelantado
+])
+def test_extension_plazo(contractual, vigente, esperado):
+    from dep_reportes.calendario import Calendario
+    cal = Calendario(frozenset({dt.date(2026, 10, 6)}))
+    assert PR.extension_plazo(contractual, vigente, cal) == esperado
+
+
+def test_columnas_de_plazo_en_el_esquema():
+    for t in ("proyectos", "metricas_semanales"):
+        assert {"fecha_entrega_contractual", "es_extension", "dias_extension"} <= set(E.columnas(t))
+        assert E.tipos(t)["es_extension"] == E.BOOLEANO

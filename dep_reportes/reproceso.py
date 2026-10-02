@@ -10,7 +10,7 @@ cada proyecto con:
 Si algun proyecto necesita un dato que las fotos no tienen, el corte no se reescribe: queda con sus datos y se
 registra en ejecuciones (resultado "reproceso_omitido", con el dato faltante). No se tocan fotos_tareas, proyectos,
 advertencias, plan_semanal, serie_diaria (necesita horas por dia) ni cierres, ni las columnas que salen de datos en
-vivo (presupuesto contractual, proyeccion por plan semanal, dias habiles para la entrega).
+vivo (presupuesto contractual, proyeccion por plan semanal, dias habiles para la entrega, extension del plazo).
 
 Marca de reproceso: antes de esta regla un corte oficial se podia reescribir con ClickUp en vivo. Si un corte tiene
 mas de una escritura con datos en vivo (modo "escritura"), sus numeros son de la ultima: metricas_semanales lleva
@@ -129,8 +129,7 @@ def recalcular(corte: dt.date, fila: Mapping, fotos: Sequence[Mapping], lb_filas
     # Las horas propias de cada tarea hasta el corte: fechadas en el corte (las metricas usan solo el acumulado).
     horas = [Horas(corte, float(f["hh_gastadas_acum"]), f["task_id"]) for f in fotos if f.get("hh_gastadas_acum")]
     lb_t, fase_lb = LB.a_tareas(lb_filas) if lb_filas else (None, {})
-    entrega = next((f.fecha_entrega_contractual for f in lb_filas if f.fecha_entrega_contractual), None)
-    res = P.calcular(lb_t, tm, horas, corte, fin, modo, fase_lb, hh_historicas=hist, entrega=entrega)
+    res = P.calcular(lb_t, tm, horas, corte, fin, modo, fase_lb, hh_historicas=hist, entrega=fin)
     nueva = dict(fila)
     nueva.update({c: res.metricas.get(c) for c in RECALCULADAS})
     nueva["rev_linea_base"] = lb_filas[0].rev if lb_filas else None
