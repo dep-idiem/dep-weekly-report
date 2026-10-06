@@ -312,3 +312,89 @@ def test_texto_item_comprimido_y_pistas_de_codigo():
     assert t["oferta"] == "[oferta] Oferta enviada en 04 — hay un .zip en 04: subir el PDF de lo enviado por separado"
     assert t["economica"] == "[economica] Propuesta económica — hay un Excel sin código en 03: renombrar o reemplazar"
     assert t["tecnica"].endswith("otro año: renombrar")
+
+
+# --- Fase 2, bloque C: corrida diaria ------------------------------------------------------------
+
+def _recon_csv(tmp_path, filas):
+    import csv
+    p = tmp_path / "recon.csv"
+    with p.open("w", encoding="utf-8-sig", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=["task_id", "ss_code", "resultado_tarea", "enlace"])
+        w.writeheader(); w.writerows(filas)
+    return p
+
+
+def test_diario_proteccion_caida_y_aviso_06_backup(tmp_path):
+    from audit_docs.diario import revisar
+    filas = [dict(task_id=f"t{i}", ss_code=f"2026.{i:04d}", resultado_tarea="INCOMPLETO", enlace="carpeta") for i in range(7)]
+    filas += [dict(task_id=f"s{i}", ss_code=f"2026.1{i:03d}", resultado_tarea="SIN_CARPETA", enlace="") for i in range(5)]
+    filas[0]["enlace"] = "subcarpeta «06 Backup»"
+    p = _recon_csv(tmp_path, filas)
+    n, backup, error = revisar(p, anterior=10)            # 7 de 10: caída de 30 %, en el límite
+    assert n == 7 and backup == ["2026.0000"] and error is None
+    assert revisar(p, anterior=11)[2] is not None          # 7 de 11: caída de 36 %
+    assert revisar(p, anterior=None)[2] is None            # primera corrida: sin referencia
+
+
+def test_diario_fuera_de_hora_no_hace_nada(monkeypatch):
+    import datetime as dt
+    from audit_docs import diario
+    llamadas = []
+    monkeypatch.setattr(diario.recon, "main", lambda *a: llamadas.append("recon") or 0)
+
+    class Reloj(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return dt.datetime(2026, 10, 7, 8, 0, tzinfo=tz)   # 11:00 UTC en verano = 08:00 Santiago
+
+    monkeypatch.setattr(diario.dt, "datetime", Reloj)
+    assert diario.main(["--evento", "schedule"]) == 0 and llamadas == []
+
+
+def _condiciones_workflow():
+    """Las condiciones `if:` de los jobs del workflow real, traducidas a Python para evaluarlas."""
+    import yaml
+    from pathlib import Path
+    wf = yaml.safe_load((Path(__file__).resolve().parent.parent / ".github/workflows/reportes.yml").read_text(encoding="utf-8"))
+    def py(expr):
+        for a, b in (("&&", " and "), ("||", " or "), ("github.event_name", "evento"),
+                     ("github.event.schedule", "cron"), ("inputs.trabajo", "trabajo")):
+            expr = expr.replace(a, b)
+        return expr
+    return {job: py(d["if"]) for job, d in wf["jobs"].items()}
+
+
+def test_workflow_cron_y_dispatch_eligen_el_job_correcto():
+    conds = _condiciones_workflow()
+    def corre(evento, cron=None, trabajo=None):
+        return {j for j, c in conds.items() if eval(c, {}, {"evento": evento, "cron": cron, "trabajo": trabajo})}
+    # Cron: sin inputs (trabajo nulo). Los dos cron del reporte disparan solo el reporte.
+    assert corre("schedule", "0 7,8 * * 1") == {"reporte"}
+    assert corre("schedule", "0 22,23 * * 0,2-6") == {"reporte"}
+    assert corre("schedule", "0 10,11 * * *") == {"audit-docs"}
+    # A mano: vacío o nulo cuenta como reporte.
+    assert corre("workflow_dispatch", trabajo="reporte") == {"reporte"}
+    assert corre("workflow_dispatch", trabajo="") == {"reporte"}
+    assert corre("workflow_dispatch", trabajo=None) == {"reporte"}
+    assert corre("workflow_dispatch", trabajo="audit-docs") == {"audit-docs"}
+
+
+def test_diario_pestana_inexistente_o_vacia_no_bloquea(monkeypatch):
+    import dep_reportes.google_auth as ga
+    from audit_docs import diario
+    monkeypatch.setenv("SHEETS_REPORTES_ID", "x")
+
+    class R:
+        def __init__(self, status, data=None, text=""):
+            self.status_code, self._d, self.text = status, data, text
+        def json(self):
+            return self._d
+
+    for respuesta, esperado in [(R(400, text="Unable to parse range: 'docs_propuestas'"), None),
+                                (R(200, {}), None),
+                                (R(200, {"values": [["ss_code", "docs_ok"]]}), None),
+                                (R(200, {"values": [["ss_code", "docs_ok"], ["a", "Completo"], ["b", "Sin carpeta"],
+                                                    ["c", "Incompleto"]]}), 2)]:
+        monkeypatch.setattr(ga, "sesion", lambda interactivo=True, r=respuesta: type("S", (), {"get": lambda self, *a, **k: r})())
+        assert diario.con_carpeta_anterior() == esperado

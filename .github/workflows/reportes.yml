@@ -6,11 +6,23 @@ on:
   # nada si no le corresponde (ventana oficial 04:00-05:59 del lunes; preliminar 19:00-20:59 de martes a domingo).
   #   Oficial:    lunes 04:00 Santiago     = 07:00 UTC (verano, UTC-3) / 08:00 UTC (invierno, UTC-4)
   #   Preliminar: mar-dom 19:00 Santiago   = 22:00 UTC (verano)        / 23:00 UTC (invierno)
+  #
+  # audit-docs (auditoría documental, fase 2 bloque C): todos los días 07:00 Santiago
+  #   = 10:00 UTC (verano, UTC-3) / 11:00 UTC (invierno, UTC-4). audit_docs.diario termina sin hacer nada
+  #   si no son las 07 en Santiago. DESACTIVADO hasta la autorización de Ale y la verificación de Make
+  #   (una tarea nueva cuyo Drive PR URL apunte a la carpeta PR): descomentar la línea "0 10,11 * * *".
   # schedule:
   #   - cron: "0 7,8 * * 1"
   #   - cron: "0 22,23 * * 0,2-6"
+  #   - cron: "0 10,11 * * *"
   workflow_dispatch:
     inputs:
+      trabajo:
+        description: "Qué correr"
+        type: choice
+        options: [reporte, audit-docs]
+        default: reporte
+        required: true
       tipo:
         description: "Tipo de corrida"
         type: choice
@@ -23,7 +35,7 @@ on:
         required: false
         default: ""
       dry_run:
-        description: "Dry-run (CSV como artefacto, sin escribir en Sheets)"
+        description: "Dry-run (reporte: CSV como artefacto, sin escribir en Sheets; audit-docs: sin escribir en ClickUp ni Sheets)"
         type: boolean
         default: true
 
@@ -36,6 +48,10 @@ concurrency:
 
 jobs:
   reporte:
+    # El cron de audit-docs no dispara el reporte; a mano, según el input "trabajo".
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule != '0 10,11 * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.trabajo != 'audit-docs')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -88,3 +104,43 @@ jobs:
           path: reportes/dry_run/
           retention-days: 7
           if-no-files-found: ignore
+
+  audit-docs:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '0 10,11 * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.trabajo == 'audit-docs')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONTZPATH: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.5"
+          cache: pip
+          cache-dependency-path: requirements-worker.txt
+
+      - name: Instalar dependencias (versiones fijas)
+        run: python -m pip install --disable-pip-version-check -r requirements-worker.txt
+
+      # recon (inventario + reglas) y sync de la checklist Documentos / Docs OK / pestaña docs_propuestas.
+      # fix_links.py NO corre a diario. Los reportes de out/ no se suben como artefacto (nombres de personas).
+      - name: Auditoría documental
+        env:
+          CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
+          GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          GOOGLE_REFRESH_TOKEN_DRIVE: ${{ secrets.GOOGLE_REFRESH_TOKEN_DRIVE }}
+          SHEETS_REPORTES_ID: ${{ secrets.SHEETS_REPORTES_ID }}
+          EVENTO: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(--evento "$EVENTO")
+          if [ "${DRY_RUN:-false}" = "true" ]; then args+=(--dry-run); fi
+          python -m audit_docs.diario "${args[@]}"
