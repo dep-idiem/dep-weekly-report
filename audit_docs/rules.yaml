@@ -1,0 +1,79 @@
+# Reglas de completitud documental para propuestas.
+# Cada regla aplica desde el estado indicado en adelante (según el orden del pipeline).
+# Los nombres de estado son PLACEHOLDERS hasta confirmar con la lista real del Paso 0.
+
+pipeline_orden:
+  - ELABORACION
+  - ENVIADA
+  - GANADA
+  - PERDIDA
+
+subcarpetas:
+  tecnica_economica: "03 Propuesta tecnica y economica"
+  oferta_enviada: "04 Oferta enviada"
+
+reglas:
+  # Ajustes de la segunda corrida (2026-10-06, ver NOTAS_fase1.md): reglas de 03 desde ENVIADA,
+  # económica como advertencia, técnica por nombre y código, oferta con .zip/.rar por revisar.
+  - id: propuesta_economica
+    descripcion: "Propuesta económica (Excel)"
+    subcarpeta: tecnica_economica
+    patron: '\.xlsx?$'
+    desde_estado: ENVIADA
+    nivel: advertencia
+
+  - id: propuesta_tecnica
+    descripcion: "Propuesta técnica (PDF o Word con el código de la propuesta)"
+    subcarpeta: tecnica_economica
+    patron: '^PR[.\- ]?DEP[.\-]\d{4}[.\-]\d{4}.*\.(pdf|docx?)$'
+    exigir_codigo: true
+    desde_estado: ENVIADA
+
+  - id: oferta_enviada
+    descripcion: "Oferta enviada (PDF final o firmado)"
+    subcarpeta: oferta_enviada
+    patron: '\.pdf$'
+    patron_revisar: '\.(zip|rar)$'
+    pista_subcarpeta: tecnica_economica
+    desde_estado: ENVIADA
+
+# Niveles de subcarpeta que se leen dentro de 03 y 04 (Rev 1, Final, Oferta Técnica...). Las de
+# ignorar_subcarpetas no se leen (versiones descartadas).
+recursivo: 1
+ignorar_subcarpetas:
+  - OLD
+  - Antiguo
+
+# --- Confirmado por Ale el 2026-10-06 (Paso 0) ---------------------------------------------------
+
+# Estado real de SS_REGISTRO -> estado del pipeline. null = sin reglas (se inventaria igual).
+# cerrada pasó por ganada: debe tener la oferta enviada. cancelada queda sin reglas porque el status
+# no dice si se canceló antes o después de enviarse.
+mapa_estados:
+  intake: null
+  en elaboración: ELABORACION
+  enviada: ENVIADA
+  ganada: GANADA
+  perdida: PERDIDA
+  cerrada: GANADA
+  derivada: null
+  cancelada: null
+
+# Tareas SIN link creadas antes de esta fecha -> HISTORICA (fuera de la evaluación); después -> SIN_CARPETA.
+# null = sin corte. Paso 1 (2026-10-06): todas las tareas se crearon desde el 2026-01-26 y no hay un
+# corte por fecha; los faltantes se explican por Tipo DEP (ver tipos_en_alcance).
+fecha_inicio_make: null
+
+# Tareas SIN link con código anterior a este -> HISTORICA. Las de 2024 y 2025 son anteriores a Make
+# (migradas a SS_REGISTRO el 2026-01-26).
+codigo_inicio_make: "2026.0001"
+
+# Solo se evalúan reglas en estas ubicaciones (prefijo "Unidad compartida / carpeta"). Las [WIP] de
+# Laboratorio y ULP usan otra plantilla de subcarpetas: se inventarían como FUERA_DE_ALCANCE.
+ubicaciones_en_alcance:
+  - "DEP - CENTRAL / 01 Propuestas"
+
+# Valores de "Tipo DEP" que se evalúan. Laboratorio y Láser dejaron de tener carpeta desde marzo de
+# 2026 (129 de las 136 tareas sin link): FUERA_DE_ALCANCE hasta definir su alcance. Vacío = todos.
+tipos_en_alcance:
+  - Ingeniería

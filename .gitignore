@@ -31,3 +31,6 @@ TAREA_*.md
 .pytest_cache/
 .venv/
 venv*/
+
+# Salida de la auditoria documental (nombres de personas y de archivos)
+audit_docs/out/
