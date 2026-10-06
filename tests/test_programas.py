@@ -6,7 +6,7 @@ import pytest
 from dep_clickup.config import TZ
 from dep_clickup.models import Task
 from dep_reportes import almacen as A, esquema as E, programas as PG
-from dep_reportes.config_reportes import PROGRAMAS_JSON
+from dep_reportes.config_reportes import PROGRAMAS_JSON, cortes_historicos
 
 D = dt.date
 CORTE = D(2026, 10, 1)
@@ -97,6 +97,8 @@ def test_la_config_del_repo_tiene_la_regla_de_general_y_los_entregables():
     assert p.entregables["reporte_alerta"].search("RE-01 Reporte de Evento - FECHA 14/07 al 20/07")   # RE = alias de RA
     l147 = p.listas["901327109633"]
     assert l147.contrato == "0147" and l147.solo_consumo        # vacía tras la migración; su saldo histórico cuenta
+    # sin entradas nativas desde la migración: el corte histórico de 0147 se fija a mano (su primera nativa)
+    assert cortes_historicos()["PJ-2025.0147"] == D(2026, 6, 3)
 
 
 def test_ritmo_planificado():
@@ -216,6 +218,22 @@ def test_compartidas_en_contratos_y_por_fase():
     assert all(f["hh_compartidas_mes"] == 1.5 and f["hh_compartidas_acum"] == 1.5 for f in ago)   # igual en cada contrato
     assert all(f["hh_compartidas_mes"] == 3.0 and f["hh_compartidas_acum"] == 4.5 for f in sep)
     assert all(f["hh_compartidas_mes"] is None for f in filas if f["es_futuro"])
+
+
+def test_fase_compartida_aceptada_no_avisa_pero_suma():
+    p = PG.desde_dict("X", {**CONFIG, "compartidas_aceptadas": [{"list_id": "INF", "fase": "tareas generales "}]})
+    horas = PG.horas_de_lista(p, "INF", TAREAS_INF, [(D(2026, 8, 4), 1.5, "x"), (D(2026, 9, 2), 2.0, "fgen")], [])
+    assert PG.compartidas_a_advertir(p, horas, CORTE) == {("INF", "PJ-2025.0147/.0019 Visitas"): 1.5}
+    assert PG.compartidas_a_advertir(P, horas, CORTE) == PG.compartidas_por_fase(horas, CORTE)    # sin aceptadas
+    sep = [f for f in PG.filas_contratos(p, horas, CORTE, E.OFICIAL) if f["mes"] == D(2026, 9, 1)]
+    assert all(f["hh_compartidas_mes"] == 2.0 and f["hh_compartidas_acum"] == 3.5 for f in sep)   # la aceptada suma
+    solo_aceptada = PG.horas_de_lista(p, "INF", TAREAS_INF, [(D(2026, 9, 2), 2.0, "fgen")], [])
+    assert PG.compartidas_a_advertir(p, solo_aceptada, CORTE) == {}                                # sin advertencia
+    with pytest.raises(ValueError, match="no es del programa"):
+        PG.desde_dict("X", {**CONFIG, "compartidas_aceptadas": [{"list_id": "OTRA", "fase": "x"}]})
+    cmp = PG.cargar(PROGRAMAS_JSON)["CMP-SHM"]
+    assert cmp.compartida_aceptada("901327789240", "Desarrollo general")                         # decisión 2026-10-06
+    assert not cmp.compartida_aceptada("901327788557", "Desarrollo general")
 
 
 def test_linea_excluida_de_entregables_conserva_sus_horas():

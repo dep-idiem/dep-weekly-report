@@ -275,7 +275,8 @@ CATALOGO.update({
                      "siguiente corte vuelve a quedar en curso y su cierre se borra."),
     "programa_horas_compartidas": Entrada(
         "Horas de un programa de servicio continuo registradas en fases que no son de un solo contrato (calzan con "
-        "varios o con ninguno): aparecen en las horas por línea, pero no en el consumo de ningún contrato.",
+        "varios o con ninguno) y que no están aceptadas como compartidas en config/programas.json "
+        "(compartidas_aceptadas): aparecen en las horas por línea, pero no en el consumo de ningún contrato.",
         ADMIN, DISTORSIONA, DISTORSIONA, _compartidas),
     "entregable_plantilla_sin_usar": Entrada(
         "Un entregable de un programa (informe o visita) tiene el número sin completar («N°x»): es una plantilla que "

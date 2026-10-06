@@ -7,7 +7,8 @@
   "timetracker_list_id": "901322429850",
   "umbral_horas_administracion": 0.2,
   "corte_historico": {
-    "PJ-2025.0019": "2026-07-20"
+    "PJ-2025.0019": "2026-07-20",
+    "PJ-2025.0147": "2026-06-03"
   },
   "minimo_horas_administracion": 20,
   "proyeccion": "uniforme",

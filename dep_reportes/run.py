@@ -334,9 +334,10 @@ def filas_programa(p: PG.Programa, c: "Corrida", corte: dt.date, tipo_corte: str
         "entregables": dict(Counter(f["situacion"] for f in entregables)),
         "contratos_sin_presupuesto": [k.id for k in p.contratos.values() if k.ritmo is None],
     }
-    # Advertencias para Administracion DEP: horas "compartido" (nivel programa) y limpieza de entregables
+    # Advertencias para Administracion DEP: horas "compartido" (nivel programa) y limpieza de entregables. Las fases
+    # compartidas aceptadas en la config no avisan (sus horas siguen en hh_compartidas).
     advertencias = []
-    compartidas = PG.compartidas_por_fase(horas, corte)
+    compartidas = PG.compartidas_a_advertir(p, horas, corte)
     if compartidas:
         ident = {"codigo": p.id, "nombre_corto": p.nombre, "cliente": p.cliente, "proyecto": p.nombre,
                  "jp_nombre": "", "jp_email": "", "estado_proyecto": FIN.EN_CURSO, "programa": p.id}

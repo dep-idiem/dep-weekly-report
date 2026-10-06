@@ -42,6 +42,9 @@
       },
       "_entregables": "mensual: un paquete por mes (los RD diarios dentro del paquete no cuentan aparte); evento: uno por evento, con su plazo como fecha de entrega (Ale, 2026-10-06)",
       "entregables_excluir_lineas": ["modelos"],
+      "compartidas_aceptadas": [
+        {"list_id": "901327789240", "fase": "Desarrollo general", "_motivo": "modelación que sirve a los dos contratos; sus horas siguen en hh_compartidas, sin advertencia (Ale, 2026-10-06)"}
+      ],
       "_entregables_excluir_lineas": "las tareas IM de Modelos son aportes al informe, no entregables (Ale, 2026-10-02); sacar \"modelos\" para incluirlas",
       "patron_plantilla": "N[°º]\\s*[a-z]\\b",
       "dias_cierre_anticipado": 30,

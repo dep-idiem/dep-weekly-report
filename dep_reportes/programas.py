@@ -23,8 +23,9 @@ Tres pestañas, que se reemplazan completas en cada corrida (salvo con --solo):
   ya es un entregable del mismo tipo no cuenta aparte (los RD diarios dentro del paquete mensual). Las lineas de
   entregables_excluir_lineas no aportan entregables (sus horas si cuentan en la linea).
 
-Advertencias para Administracion DEP (run.filas_programa): horas "compartido" (nivel programa, con las fases de
-origen) y limpieza de entregables (plantilla sin usar, codigo repetido en el contrato, cierre muy anterior a la
+Advertencias para Administracion DEP (run.filas_programa): horas "compartido" en fases no aceptadas como compartidas
+(nivel programa, con las fases de origen; compartidas_aceptadas en la config, p. ej. "Desarrollo general" de Modelos,
+no avisan pero siguen sumando en hh_compartidas) y limpieza de entregables (plantilla sin usar, codigo repetido en el contrato, cierre muy anterior a la
 fecha de entrega).
 """
 from __future__ import annotations
@@ -112,6 +113,10 @@ class Programa:
     patron_plantilla: re.Pattern = re.compile(PLANTILLA, re.I)
     dias_cierre_anticipado: int = DIAS_CIERRE_ANTICIPADO
     frecuencias: dict[str, str] = field(default_factory=dict)    # tipo de entregable -> mensual / evento
+    compartidas_aceptadas: frozenset[tuple[str, str]] = frozenset()  # (list_id, fase en minusculas): sin advertencia
+
+    def compartida_aceptada(self, list_id: str, fase: str) -> bool:
+        return (list_id, (fase or "").strip().lower()) in self.compartidas_aceptadas
 
     def contrato_de(self, list_id: str, fase: str | None) -> str:
         lp = self.listas[list_id]
@@ -168,7 +173,17 @@ def desde_dict(pid: str, d: Mapping) -> Programa:
                     frozenset(d.get("advertencias_omitidas") or ()),
                     frozenset(d.get("entregables_excluir_lineas") or ()),
                     re.compile(d.get("patron_plantilla") or PLANTILLA, re.I),
-                    int(d.get("dias_cierre_anticipado", DIAS_CIERRE_ANTICIPADO)), frecuencias)
+                    int(d.get("dias_cierre_anticipado", DIAS_CIERRE_ANTICIPADO)), frecuencias,
+                    _compartidas_aceptadas(pid, d, listas))
+
+
+def _compartidas_aceptadas(pid: str, d: Mapping, listas: Mapping[str, ListaPrograma]) -> frozenset[tuple[str, str]]:
+    out = set()
+    for x in d.get("compartidas_aceptadas") or []:
+        if x["list_id"] not in listas:
+            raise ValueError(f"programa {pid}: compartida aceptada en la lista {x['list_id']}, que no es del programa")
+        out.add((x["list_id"], x["fase"].strip().lower()))
+    return frozenset(out)
 
 
 def cargar(ruta: Path) -> dict[str, Programa]:
@@ -324,6 +339,12 @@ def compartidas_por_fase(horas: Sequence[HoraPrograma], corte: dt.date) -> dict[
         if h.contrato == COMPARTIDO and h.fecha <= corte:
             out[(h.list_id, h.fase)] += h.horas
     return dict(out)
+
+
+def compartidas_a_advertir(p: Programa, horas: Sequence[HoraPrograma], corte: dt.date) -> dict[tuple[str, str], float]:
+    """compartidas_por_fase sin las fases aceptadas como compartidas en la config (no avisan; sus horas siguen en
+    hh_compartidas de programa_contratos)."""
+    return {k: v for k, v in compartidas_por_fase(horas, corte).items() if not p.compartida_aceptada(*k)}
 
 
 # --- Entregables --------------------------------------------------------------------------------
