@@ -1,5 +1,5 @@
 {
-  "_doc": "Programas de servicio continuo (dep_reportes/programas.py): proyectos largos sin curva S que se reportan por contrato y por línea. Cada lista tiene una línea; el contrato se fija por lista (\"contrato\") o se deduce del nombre de su fase con contratos.<id>.patron_fase (si calza con más de un contrato o con ninguno, la hora queda como \"compartido\"). solo_consumo: la lista no entra a la vista (horas por línea ni entregables), pero sus horas cuentan en el consumo de su contrato. Presupuesto: hh_periodo (HH del período) o hh_mes; ritmo planificado = hh_periodo / meses del período.",
+  "_doc": "Programas de servicio continuo (dep_reportes/programas.py): proyectos largos sin curva S que se reportan por contrato y por línea. Cada lista tiene una línea; el contrato se fija por lista (\"contrato\") o se deduce del nombre de su fase con contratos.<id>.patron_fase (si calza con más de un contrato o con ninguno, la hora va al \"contrato_por_defecto\" de la lista o, si no tiene, queda como \"compartido\"). solo_consumo: la lista no entra a la vista (horas por línea ni entregables), pero sus horas cuentan en el consumo de su contrato. Presupuesto: hh_periodo (HH del período) o hh_mes; ritmo planificado = hh_periodo / meses del período.",
   "programas": {
     "CMP-SHM": {
       "nombre": "Monitoreo SHM CMP",
@@ -26,16 +26,21 @@
         "modelos": "Modelos"
       },
       "listas": [
-        {"list_id": "901326875156", "linea": "general", "contrato": "0019", "_nombre": "PJ-2025.0019 Monitoreo Salud Estructural Los Colorados"},
-        {"list_id": "901327109633", "linea": "general", "contrato": "0147", "_nombre": "PJ-2025.0147 Monitoreo Apilador móvil"},
-        {"list_id": "901327788557", "linea": "informes", "_nombre": "PJ-2025.0019-0147 Desarrollo Informes"},
-        {"list_id": "901327789240", "linea": "modelos", "_nombre": "PJ-2025.0019-0147 Calibración y Ajustes en Modelos"},
+        {"list_id": "901326875156", "linea": "general", "contrato_por_defecto": "0019", "_nombre": "PJ-2025.0019 | CMP-SHM General | CMP",
+         "_contrato": "por fase (MLC 0019 / Apilador 0147); 00 Administración, 05 Reportes y toda fase compartida histórica van a 0019 (Ale, 2026-10-06)"},
+        {"list_id": "901327109633", "linea": "general", "contrato": "0147", "solo_consumo": true, "_nombre": "PJ-2025.0147 | CMP-SHM Apilador (histórico) | CMP (antes PJ-2025.0147 Monitoreo Apilador móvil)",
+         "_solo_consumo": "sin tareas activas desde la migración; no se archiva para que el reporte siga leyendo su saldo del Timetracker (Ale, 2026-10-06)"},
+        {"list_id": "901327788557", "linea": "informes", "_nombre": "PJ-2025.0019-0147 | CMP-SHM Informes | CMP"},
+        {"list_id": "901327789240", "linea": "modelos", "_nombre": "PJ-2025.0019-0147 | CMP-SHM Modelos | CMP"},
         {"list_id": "901327789183", "linea": "general", "contrato": "0147", "solo_consumo": true, "_nombre": "PJ-2025.0147 Diagnóstico Monitoreo Apilador móvil (finalizada)"}
       ],
       "entregables": {
-        "informe": "^\\s*IM-\\d",
-        "visita": "^\\s*VT-\\d"
+        "informe": {"patron": "^\\s*IM-\\d", "frecuencia": "mensual"},
+        "visita": {"patron": "^\\s*VT-\\d", "frecuencia": "evento"},
+        "reporte_diario": {"patron": "^\\s*RD-\\d", "frecuencia": "mensual"},
+        "reporte_alerta": {"patron": "^\\s*R[AE]-\\d", "frecuencia": "evento", "_alias": "RE (Reporte de Evento) = RA (Ale, 2026-10-06)"}
       },
+      "_entregables": "mensual: un paquete por mes (los RD diarios dentro del paquete no cuentan aparte); evento: uno por evento, con su plazo como fecha de entrega (Ale, 2026-10-06)",
       "entregables_excluir_lineas": ["modelos"],
       "_entregables_excluir_lineas": "las tareas IM de Modelos son aportes al informe, no entregables (Ale, 2026-10-02); sacar \"modelos\" para incluirlas",
       "patron_plantilla": "N[°º]\\s*[a-z]\\b",

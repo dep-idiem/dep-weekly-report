@@ -71,6 +71,34 @@ def test_contrato_fijo_o_por_fase():
     assert fusion.contrato_de("GEN", "MLC 0019") == "0019" and fusion.contrato_de("GEN", "Apilador 0147") == "0147"
 
 
+def test_contrato_por_defecto_de_la_lista_general():
+    gen = PG.desde_dict("F", {**CONFIG, "listas": [{"list_id": "GEN", "linea": "general", "contrato_por_defecto": "0019"}]})
+    assert gen.contrato_de("GEN", "Apilador 0147") == "0147"                    # la fase manda
+    assert gen.contrato_de("GEN", "00 Administración") == "0019"                # no calza: por defecto
+    assert gen.contrato_de("GEN", "PJ-2025.0147/.0019 Visitas") == "0019"       # calza con los dos: por defecto
+    assert gen.contrato_de("GEN", None) == "0019"
+    hist = PG.horas_de_lista(gen, "GEN", [], [], [(D(2025, 5, 2), 10.0)])
+    assert [(x.origen, x.contrato) for x in hist] == [(PG.TIMETRACKER, "0019")]  # el saldo historico tambien
+    with pytest.raises(ValueError, match="contrato_por_defecto 9999"):
+        PG.desde_dict("X", {**CONFIG, "listas": [{"list_id": "L", "linea": "general", "contrato_por_defecto": "9999"}]})
+    with pytest.raises(ValueError, match="contrato fijo y contrato_por_defecto"):
+        PG.desde_dict("X", {**CONFIG, "listas": [{"list_id": "L", "linea": "general", "contrato": "0019",
+                                                  "contrato_por_defecto": "0147"}]})
+
+
+def test_la_config_del_repo_tiene_la_regla_de_general_y_los_entregables():
+    p = PG.cargar(PROGRAMAS_JSON)["CMP-SHM"]
+    gen = p.listas["901326875156"]
+    assert gen.contrato is None and gen.contrato_por_defecto == "0019"
+    assert p.frecuencias == {"informe": PG.MENSUAL, "visita": PG.EVENTO, "reporte_diario": PG.MENSUAL,
+                             "reporte_alerta": PG.EVENTO}
+    assert p.entregables["reporte_diario"].search("RD-03 Reportes diarios sep 2026")
+    assert p.entregables["reporte_alerta"].search("RA-01 Reporte de alerta E4")
+    assert p.entregables["reporte_alerta"].search("RE-01 Reporte de Evento - FECHA 14/07 al 20/07")   # RE = alias de RA
+    l147 = p.listas["901327109633"]
+    assert l147.contrato == "0147" and l147.solo_consumo        # vacía tras la migración; su saldo histórico cuenta
+
+
 def test_ritmo_planificado():
     c19, c147 = P.contratos["0019"], P.contratos["0147"]
     assert c19.meses_periodo == 12 and c19.ritmo == 100 and c19.hh_total_periodo == 1200
@@ -144,6 +172,28 @@ def test_entregables_por_contrato_y_linea():
     assert por["im1"]["mes"] == D(2026, 8, 1) and por["im1"]["responsable_linea"] == "Luciano"
     assert set(filas[0]) == set(E.columnas("programa_entregables"))
     assert PG.filas_entregables(P, "FIN", TAREAS_INF, CORTE, E.PRELIMINAR, "x") == []     # solo_consumo: fuera de la vista
+    assert {f["frecuencia"] for f in filas} == {PG.EVENTO}                   # forma corta del patron: evento
+
+
+def test_reportes_diarios_y_de_alerta():
+    p = PG.desde_dict("X", {**CONFIG, "entregables": {
+        "informe": {"patron": "^IM-\\d", "frecuencia": "mensual"},
+        "reporte_diario": {"patron": "^RD-\\d", "frecuencia": "mensual"},
+        "reporte_alerta": {"patron": "^RA-\\d", "frecuencia": "evento"}}})
+    tareas = [tarea("f19", "MLC 0019"),
+              tarea("rd9", "RD-09 Reportes diarios sep 2026", "f19", "completado", D(2026, 9, 30), D(2026, 9, 30), "done"),
+              *[tarea(f"rd9.{i}", f"RD-09.{i:02d} Reporte diario", "rd9", "completado", D(2026, 9, i), D(2026, 9, i), "done")
+                for i in (1, 2, 3)],
+              tarea("ra1", "RA-01 Reporte de alerta E4", "f19", "to do", D(2026, 9, 28)),
+              tarea("ra2", "RA-02 Reporte de alerta E6", "f19", "completado", D(2026, 9, 10), D(2026, 9, 9), "done")]
+    por = {f["task_id"]: f for f in PG.filas_entregables(p, "INF", tareas, CORTE, E.PRELIMINAR, "x")}
+    assert set(por) == {"rd9", "ra1", "ra2"}                                  # los RD diarios van dentro del paquete
+    assert (por["rd9"]["tipo_entregable"], por["rd9"]["frecuencia"], por["rd9"]["mes"]) == ("reporte_diario", PG.MENSUAL,
+                                                                                            D(2026, 9, 1))
+    assert (por["ra1"]["frecuencia"], por["ra1"]["situacion"], por["ra1"]["dias_atraso"]) == (PG.EVENTO, PG.VENCIDO, 3)
+    assert por["ra2"]["situacion"] == PG.A_TIEMPO and por["ra2"]["contrato"] == "0019"
+    with pytest.raises(ValueError, match="frecuencia semanal"):
+        PG.desde_dict("X", {**CONFIG, "entregables": {"x": {"patron": "^X-", "frecuencia": "semanal"}}})
 
 
 def test_fusion_de_las_pestanas_del_programa():

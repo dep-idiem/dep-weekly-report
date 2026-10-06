@@ -52,6 +52,11 @@ contrato.
 - Tabla: `contrato_nombre`, `linea_nombre`, `nombre`, `fecha_entrega`, `fecha_cierre`, `situacion`, `dias_atraso`,
   con `url` como enlace. Orden: `fecha_entrega` descendente.
 - Barras por mes: dimensión `mes`, desglose `situacion`, métrica `COUNT(task_id)`: un informe mensual por contrato.
+- Tipos (`tipo_entregable`): `informe` (IM), `visita` (VT), `reporte_diario` (RD) y `reporte_alerta` (RA). La columna
+  `frecuencia` dice cómo se cuentan: `mensual` (IM, RD: un paquete por mes; los RD diarios dentro del paquete no
+  cuentan aparte) o `evento` (VT, RA: uno por evento, con su plazo como fecha de entrega). Agregar `frecuencia` como
+  control o filtro para separar los entregables mensuales de los por evento. La columna es nueva: actualizar los
+  campos de la fuente «Programa · entregables».
 
 ## Páginas de curva S
 
@@ -60,7 +65,9 @@ En las tablas y gráficos de proyectos en curso, agregar el filtro **`programa` 
 
 ## Horas «compartido»
 
-Las horas registradas en fases que no son de un solo contrato (por ejemplo «PJ-2025.0147/.0019 Informes Visitas»
+En la lista General, una fase que no es de un solo contrato (`00 Administración`, `05 Reportes`, fases históricas
+compartidas) cuenta en 0019 (`contrato_por_defecto`), igual que su saldo del Timetracker. En las listas de Informes y
+Modelos, las horas registradas en fases que no son de un solo contrato (por ejemplo «PJ-2025.0147/.0019 Informes Visitas»
 o «Tareas Generales») aparecen con contrato «Compartido (varios contratos)» en las horas por línea y en
 `hh_compartidas_mes` / `hh_compartidas_acum`, pero no suman en el consumo de ningún contrato. Mientras existan, la
 pestaña `advertencias` tiene una fila `programa_horas_compartidas` (nivel `programa`, sin `list_id`) con el total y

@@ -3,8 +3,9 @@
 Un programa agrupa listas de un mismo servicio largo (sin curva S) que se reporta por contrato y por linea:
 - linea: de la lista (cada encargado presenta solo la suya);
 - contrato: fijo en la lista ("contrato") o deducido del nombre de la fase (tarea de primer nivel) con
-  contratos.<id>.patron_fase. Si la fase calza con mas de un contrato o con ninguno, la hora queda "compartido":
-  aparece en las horas por linea, pero no en el consumo de ningun contrato.
+  contratos.<id>.patron_fase. Si la fase calza con mas de un contrato o con ninguno, la hora va al
+  "contrato_por_defecto" de la lista o, si no tiene, queda "compartido": aparece en las horas por linea, pero no en el
+  consumo de ningun contrato.
 Asi funciona igual con las listas actuales (una lista general por contrato) y con una lista "General" con una fase
 por contrato.
 
@@ -17,7 +18,9 @@ Tres pestañas, que se reemplazan completas en cada corrida (salvo con --solo):
 - programa_contratos: por contrato y mes, horas del mes y acumuladas frente al ritmo planificado
   (HH del periodo / meses del periodo; vacio mientras no haya presupuesto en la config), y las horas "compartido"
   del programa en ese mes (no son de ningun contrato: no se suman entre contratos);
-- programa_entregables: informes y visitas (por nombre), con su situacion frente a la fecha de entrega. Las lineas de
+- programa_entregables: entregables por prefijo del nombre (IM, VT, RD, RA...), con su situacion frente a la fecha de
+  entrega y su frecuencia ("mensual": un paquete por mes; "evento": uno por evento, con plazo). Una tarea cuyo ancestro
+  ya es un entregable del mismo tipo no cuenta aparte (los RD diarios dentro del paquete mensual). Las lineas de
   entregables_excluir_lineas no aportan entregables (sus horas si cuentan en la linea).
 
 Advertencias para Administracion DEP (run.filas_programa): horas "compartido" (nivel programa, con las fases de
@@ -47,6 +50,8 @@ ABIERTAS = (VENCIDO, PENDIENTE, SIN_FECHA)
 PLANTILLA = r"N[°º]\s*[a-z]\b"          # "VT-02 Visita N°x": numero sin completar
 CODIGO_ENTREGABLE = re.compile(r"^\s*([A-Za-z]+-\d+(?:\.\d+)?)")
 DIAS_CIERRE_ANTICIPADO = 30
+MENSUAL, EVENTO = "mensual", "evento"
+FRECUENCIAS = (MENSUAL, EVENTO)
 
 
 @dataclass(frozen=True)
@@ -90,6 +95,7 @@ class ListaPrograma:
     linea: str
     contrato: str | None = None       # fijo; None = se deduce de la fase
     solo_consumo: bool = False
+    contrato_por_defecto: str | None = None   # fase que no calza con un unico contrato (None = "compartido")
 
 
 @dataclass(frozen=True)
@@ -105,13 +111,19 @@ class Programa:
     entregables_excluir_lineas: frozenset[str] = frozenset()
     patron_plantilla: re.Pattern = re.compile(PLANTILLA, re.I)
     dias_cierre_anticipado: int = DIAS_CIERRE_ANTICIPADO
+    frecuencias: dict[str, str] = field(default_factory=dict)    # tipo de entregable -> mensual / evento
 
     def contrato_de(self, list_id: str, fase: str | None) -> str:
-        fijo = self.listas[list_id].contrato
-        if fijo:
-            return fijo
+        lp = self.listas[list_id]
+        if lp.contrato:
+            return lp.contrato
         calzan = [c.id for c in self.contratos.values() if c.patron_fase and fase and c.patron_fase.search(fase)]
-        return calzan[0] if len(calzan) == 1 else COMPARTIDO
+        return calzan[0] if len(calzan) == 1 else lp.contrato_por_defecto or COMPARTIDO
+
+    def contrato_historico(self, list_id: str) -> str:
+        """Contrato del saldo del Timetracker de la lista (no tiene fase)."""
+        lp = self.listas[list_id]
+        return lp.contrato or lp.contrato_por_defecto or COMPARTIDO
 
     def nombre_contrato(self, cid: str) -> str:
         return self.contratos[cid].nombre if cid in self.contratos else NOMBRE_COMPARTIDO
@@ -134,17 +146,29 @@ def desde_dict(pid: str, d: Mapping) -> Programa:
                                   _fecha(p.get("periodo_fin")))
     listas = {}
     for l in d.get("listas", []):
-        if l.get("contrato") and l["contrato"] not in contratos:
-            raise ValueError(f"programa {pid}: la lista {l['list_id']} tiene contrato {l['contrato']} sin definir")
+        for campo in ("contrato", "contrato_por_defecto"):
+            if l.get(campo) and l[campo] not in contratos:
+                raise ValueError(f"programa {pid}: la lista {l['list_id']} tiene {campo} {l[campo]} sin definir")
+        if l.get("contrato") and l.get("contrato_por_defecto"):
+            raise ValueError(f"programa {pid}: la lista {l['list_id']} tiene contrato fijo y contrato_por_defecto")
         if l["linea"] not in d.get("lineas", {}):
             raise ValueError(f"programa {pid}: la lista {l['list_id']} tiene la línea {l['linea']} sin definir")
-        listas[l["list_id"]] = ListaPrograma(l["list_id"], l["linea"], l.get("contrato"), bool(l.get("solo_consumo")))
+        listas[l["list_id"]] = ListaPrograma(l["list_id"], l["linea"], l.get("contrato"), bool(l.get("solo_consumo")),
+                                             l.get("contrato_por_defecto"))
+    patrones, frecuencias = {}, {}
+    for tipo, v in (d.get("entregables") or {}).items():
+        v = {"patron": v} if isinstance(v, str) else v       # forma corta: solo el patron (frecuencia "evento")
+        frecuencias[tipo] = v.get("frecuencia", EVENTO)
+        if frecuencias[tipo] not in FRECUENCIAS:
+            raise ValueError(f"programa {pid}: el entregable {tipo} tiene frecuencia {frecuencias[tipo]} "
+                             f"(válidas: {', '.join(FRECUENCIAS)})")
+        patrones[tipo] = re.compile(v["patron"], re.I)
     return Programa(pid, d.get("nombre", pid), d.get("cliente", ""), contratos, dict(d.get("lineas", {})), listas,
-                    {k: re.compile(v, re.I) for k, v in (d.get("entregables") or {}).items()},
+                    patrones,
                     frozenset(d.get("advertencias_omitidas") or ()),
                     frozenset(d.get("entregables_excluir_lineas") or ()),
                     re.compile(d.get("patron_plantilla") or PLANTILLA, re.I),
-                    int(d.get("dias_cierre_anticipado", DIAS_CIERRE_ANTICIPADO)))
+                    int(d.get("dias_cierre_anticipado", DIAS_CIERRE_ANTICIPADO)), frecuencias)
 
 
 def cargar(ruta: Path) -> dict[str, Programa]:
@@ -214,14 +238,14 @@ def fase_por_tarea(tareas: Iterable[Task]) -> dict[str, str]:
 def horas_de_lista(p: Programa, list_id: str, tareas: Sequence[Task], nativas: Iterable[tuple[dt.date, float, str]],
                    historicas: Iterable[tuple[dt.date, float]]) -> list[HoraPrograma]:
     """nativas: (fecha, horas, task_id) que el reporte cuenta en la lista; historicas: (fecha, horas) del saldo del
-    Timetracker de la lista. Las historicas van al contrato fijo de la lista (o "compartido" si no tiene)."""
+    Timetracker de la lista. Las historicas van al contrato fijo o por defecto de la lista (o "compartido")."""
     lp = p.listas[list_id]
     fases = fase_por_tarea(tareas)
     vista = not lp.solo_consumo
     out = [HoraPrograma(list_id, lp.linea, p.contrato_de(list_id, fases.get(tid)), f, h, CLICKUP, vista,
                         fases.get(tid, "(tarea que ya no está en la lista)"))
            for f, h, tid in nativas]
-    out += [HoraPrograma(list_id, HISTORIAL, lp.contrato or COMPARTIDO, f, h, TIMETRACKER, vista)
+    out += [HoraPrograma(list_id, HISTORIAL, p.contrato_historico(list_id), f, h, TIMETRACKER, vista)
             for f, h in historicas]
     return out
 
@@ -322,10 +346,23 @@ def filas_entregables(p: Programa, list_id: str, tareas: Sequence[Task], corte: 
         return []
     fases = fase_por_tarea(tareas)
     base = _base(p, corte, tipo_corte)
+    por_id = {t.id: t for t in tareas}
+    tipo_de = {t.id: next((k for k, rx in p.entregables.items() if rx.search(t.name or "")), None) for t in tareas}
+
+    def dentro_de_otro(t: Task) -> bool:
+        """Algun ancestro es un entregable del mismo tipo (p. ej. un RD diario dentro del paquete mensual)."""
+        x, vistos = t, set()
+        while x.parent in por_id and x.parent not in vistos:
+            vistos.add(x.parent)
+            x = por_id[x.parent]
+            if tipo_de[x.id] == tipo_de[t.id]:
+                return True
+        return False
+
     out = []
     for t in tareas:
-        tipo = next((k for k, rx in p.entregables.items() if rx.search(t.name or "")), None)
-        if tipo is None:
+        tipo = tipo_de[t.id]
+        if tipo is None or dentro_de_otro(t):
             continue
         due = t.due_date
         hecho = t.date_done.date() if t.date_done else None
@@ -333,7 +370,8 @@ def filas_entregables(p: Programa, list_id: str, tareas: Sequence[Task], corte: 
         c = p.contrato_de(list_id, fases.get(t.id))
         out.append({**base, "contrato": c, "contrato_nombre": p.nombre_contrato(c), "linea": lp.linea,
                     "linea_nombre": p.nombre_linea(lp.linea), "responsable_linea": responsable, "list_id": list_id,
-                    "task_id": t.id, "tipo_entregable": tipo, "nombre": t.name.strip(), "fase": fases.get(t.id, ""),
+                    "task_id": t.id, "tipo_entregable": tipo, "frecuencia": p.frecuencias.get(tipo, EVENTO),
+                    "nombre": t.name.strip(), "fase": fases.get(t.id, ""),
                     "estado": t.status, "fecha_entrega": due, "fecha_cierre": hecho,
                     "mes": mes(due or hecho) if (due or hecho) else None, "situacion": sit, "dias_atraso": atraso,
                     "url": t.url})
