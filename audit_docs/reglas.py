@@ -125,6 +125,11 @@ class Regla:
     exigir_codigo: bool = False          # el archivo debe llevar el código de la tarea (AAAA.NNNN)
     patron_revisar: str | None = None    # si nada calza con `patron` pero sí con este: cumple, "por revisar"
     pista_subcarpeta: str | None = None  # si no cumple, buscar el mismo patrón ahí e informarlo como pista
+    etiqueta: str = ""                   # prefijo del ítem en la checklist: "[etiqueta] texto"
+    textos: dict[str, str] = field(default_factory=dict)  # causa o pista_codigo -> texto del ítem si no cumple
+
+    def __post_init__(self):
+        self.etiqueta = self.etiqueta or self.id
 
     def coincidencias(self, archivos: list[dict], codigo: str | None = None) -> list[str]:
         return self.evaluar(archivos, codigo)["coincidencias"]

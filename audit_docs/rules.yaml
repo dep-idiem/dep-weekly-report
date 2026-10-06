@@ -13,6 +13,7 @@ subcarpetas:
   oferta_enviada: "04 Oferta enviada"
 
 reglas:
+  # patron_revisar (.zip/.rar) NO cumple: causa oferta_comprimida (Fase 2, decisión de Ale).
   # Ajustes de la segunda corrida (2026-10-06, ver NOTAS_fase1.md): reglas de 03 desde ENVIADA,
   # económica como advertencia, técnica por nombre y código, oferta con .zip/.rar por revisar.
   # Fase 2: la económica vuelve a ser faltante y exige el código de la tarea en el nombre.
@@ -22,6 +23,10 @@ reglas:
     patron: '\.xlsx?$'
     exigir_codigo: true
     desde_estado: ENVIADA
+    etiqueta: economica
+    textos:
+      sin_codigo: "Propuesta económica — hay un Excel sin código en 03: renombrar o reemplazar"
+      otro_anio: "Propuesta económica — hay un archivo con el número de código pero otro año: renombrar"
 
   - id: propuesta_tecnica
     descripcion: "Propuesta técnica (PDF o Word con el código de la propuesta)"
@@ -29,6 +34,10 @@ reglas:
     patron: '^PR[.\- ]?DEP[.\-]\d{4}[.\-]\d{4}.*\.(pdf|docx?)$'
     exigir_codigo: true
     desde_estado: ENVIADA
+    etiqueta: tecnica
+    textos:
+      sin_codigo: "Propuesta técnica — hay un documento sin el código de esta propuesta en 03: renombrar o reemplazar"
+      otro_anio: "Propuesta técnica — hay un archivo con el número de código pero otro año: renombrar"
 
   - id: oferta_enviada
     descripcion: "Oferta enviada (PDF final o firmado)"
@@ -37,6 +46,10 @@ reglas:
     patron_revisar: '\.(zip|rar)$'
     pista_subcarpeta: tecnica_economica
     desde_estado: ENVIADA
+    etiqueta: oferta
+    textos:
+      oferta_mal_ubicada: "Oferta enviada en 04 — hay un PDF con el código en 03: mover a 04"
+      oferta_comprimida: "Oferta enviada en 04 — hay un .zip en 04: subir el PDF de lo enviado por separado"
 
 # Niveles de subcarpeta que se leen dentro de 03 y 04 (Rev 1, Final, Oferta Técnica...). Las de
 # ignorar_subcarpetas no se leen (versiones descartadas).

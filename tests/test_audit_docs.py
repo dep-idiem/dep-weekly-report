@@ -106,11 +106,15 @@ def test_clasificar_economica_y_causa_oferta():
     f = _fila(link_pr="x", carpeta_encontrada="si", ubicacion=DEP, subs=_subs([{"name": "PR.DEP.2026.0001 a.docx"}, eco], []))
     _clasificar(f, r)
     assert f.causa_oferta == "sin_oferta" and f.resultado == "INCOMPLETO"
-    # Oferta en 04 como .rar: cuenta como cumplida en recon, causa por_revisar.
+    # Oferta en 04 solo como .rar: no cumple, causa oferta_comprimida (INCOMPLETO, igual que en ClickUp).
     f = _fila(link_pr="x", carpeta_encontrada="si", ubicacion=DEP, subs=_subs([tec, eco], [{"name": "Final.rar"}]))
     _clasificar(f, r)
-    assert f.resultado == "COMPLETO" and f.causa_oferta == "por_revisar"
-    assert any("por revisar" in o for o in f.observaciones)
+    assert f.resultado == "INCOMPLETO" and f.causa_oferta == "oferta_comprimida"
+    assert any("solo comprimidos" in o for o in f.observaciones)
+    # Con el PDF suelto además del .rar: cumple.
+    f = _fila(link_pr="x", carpeta_encontrada="si", ubicacion=DEP, subs=_subs([tec, eco], [{"name": "Final.rar"}, {"name": "Oferta.pdf"}]))
+    _clasificar(f, r)
+    assert f.resultado == "COMPLETO" and f.causa_oferta == ""
 
 
 def test_leer_un_nivel_ignorando_old():
@@ -186,3 +190,125 @@ def test_codigo_plantilla_y_pistas():
     archivos = [{"name": "PR.DEP.2025.0171 GDS.xlsx"}, {"name": "PR.DEP.2025.0171 - Evaluacion.docx"}]
     assert eco.evaluar(archivos, "2026.0171")["pista_codigo"] == tec.evaluar(archivos, "2026.0171")["pista_codigo"] == "otro_anio"
     assert eco.evaluar([], "2026.0171")["pista_codigo"] == "" and pista_codigo([], "2026.0171") == ""
+
+
+# --- Fase 2, bloque B: checklist y Docs OK ---------------------------------------------------
+
+class _CUChecklist:
+    """ClickUp falso con checklists y un campo Docs OK, para probar el plan contra un estado."""
+
+    def __init__(self, tarea):
+        self.tarea, self.n, self.escrituras = tarea, 0, 0
+
+    def _id(self):
+        self.n += 1; return f"id{self.n}"
+
+    def crear_checklist(self, tid, nombre):
+        self.escrituras += 1
+        ch = {"id": self._id(), "name": nombre, "items": []}; self.tarea["checklists"].append(ch); return ch
+
+    def _ch(self, cid):
+        return next(c for c in self.tarea["checklists"] if c["id"] == cid)
+
+    def crear_item(self, cid, nombre):
+        self.escrituras += 1
+        ch = self._ch(cid); ch["items"].append({"id": self._id(), "name": nombre, "resolved": False}); return ch
+
+    def editar_item(self, cid, iid, **cambios):
+        self.escrituras += 1
+        ch = self._ch(cid); next(i for i in ch["items"] if i["id"] == iid).update(cambios); return ch
+
+    def set_campo(self, tid, fid, valor):
+        self.escrituras += 1; self.tarea["docs"] = valor; return 200
+
+    def borrar_campo(self, tid, fid):
+        self.escrituras += 1; self.tarea["docs"] = None; return 200
+
+
+OPC = {"Completo": "o1", "Incompleto": "o2", "Sin carpeta": "o3"}
+
+
+def _ev(resultado="INCOMPLETO", **por_regla):
+    from audit_docs.sync_checklists import Evaluacion
+    base = {"propuesta_economica": dict(cumple=True), "propuesta_tecnica": dict(cumple=True),
+            "oferta_enviada": dict(cumple=False, causa="oferta_mal_ubicada")}
+    base.update(por_regla)
+    ev = Evaluacion("t", "2026.0152", "n", "ganada", "JP", resultado, "c")
+    ev.reglas = [{"id": k, "aplica": True, "cumple": v.get("cumple", True), "causa": v.get("causa", ""),
+                  "pista_codigo": v.get("pista_codigo", "")} for k, v in base.items()]
+    return ev
+
+
+def _docs(tarea):
+    return {v: k for k, v in OPC.items()}.get(tarea["docs"])
+
+
+def test_checklist_idempotente_y_texto_mal_ubicada():
+    from audit_docs.sync_checklists import aplicar_plan, planificar
+    r = Reglas.cargar()
+    tarea = {"checklists": [], "docs": None}
+    cu = _CUChecklist(tarea)
+    p = planificar(_ev(), tarea, r, _docs(tarea))
+    assert p.crear_checklist and [i["accion"] for i in p.items] == ["crear"] * 3
+    aplicar_plan(cu, p, "F", OPC, lambda *a: None)
+    ch = tarea["checklists"][0]
+    assert ch["name"] == "Documentos" and _docs(tarea) == "Incompleto"
+    nombres = {i["name"]: i["resolved"] for i in ch["items"]}
+    assert nombres["[oferta] Oferta enviada en 04 — hay un PDF con el código en 03: mover a 04"] is False
+    assert nombres[next(n for n in nombres if n.startswith("[tecnica]"))] is True
+    # Segunda corrida igual: nada que escribir.
+    antes = cu.escrituras
+    p2 = planificar(_ev(), tarea, r, _docs(tarea))
+    assert p2.escrituras == 0 and not p2.crear_checklist
+    aplicar_plan(cu, p2, "F", OPC, lambda *a: None)
+    assert cu.escrituras == antes and len(tarea["checklists"]) == 1
+
+
+def test_checklist_gobernada_por_el_worker_respeta_items_propios():
+    from audit_docs.sync_checklists import aplicar_plan, planificar
+    r = Reglas.cargar()
+    tarea = {"checklists": [], "docs": None}
+    cu = _CUChecklist(tarea)
+    aplicar_plan(cu, planificar(_ev(), tarea, r, None), "F", OPC, lambda *a: None)
+    ch = tarea["checklists"][0]
+    of = next(i for i in ch["items"] if i["name"].startswith("[oferta]"))
+    of["resolved"] = True                                            # alguien la marcó a mano
+    ch["items"].append({"id": "propio", "name": "Pedir firma al cliente", "resolved": False})
+    p = planificar(_ev(), tarea, r, _docs(tarea))
+    assert [i["accion"] for i in p.items].count("editar") == 1
+    aplicar_plan(cu, p, "F", OPC, lambda *a: None)
+    assert of["resolved"] is False                                   # el archivo no está: se desmarca
+    assert {"id": "propio", "name": "Pedir firma al cliente", "resolved": False} in ch["items"]
+    # Se sube la oferta a 04: el ítem cambia de texto y queda resuelto; Docs OK pasa a Completo.
+    p = planificar(_ev("COMPLETO", oferta_enviada=dict(cumple=True)), tarea, r, _docs(tarea))
+    aplicar_plan(cu, p, "F", OPC, lambda *a: None)
+    assert of["resolved"] is True and of["name"] == "[oferta] Oferta enviada (PDF final o firmado)"
+    assert _docs(tarea) == "Completo"
+
+
+def test_no_aplica_limpia_docs_ok_y_no_toca_checklist():
+    from audit_docs.sync_checklists import aplicar_plan, planificar
+    r = Reglas.cargar()
+    tarea = {"checklists": [{"id": "c", "name": "Documentos", "items": []}], "docs": "o2"}
+    cu = _CUChecklist(tarea)
+    for resultado in ("NO_APLICA", "HISTORICA", "FUERA_DE_ALCANCE"):
+        tarea["docs"] = "o2"
+        p = planificar(_ev(resultado), tarea, r, _docs(tarea))
+        assert p.docs_ok_nuevo is None and p.items == [] and not p.crear_checklist
+        aplicar_plan(cu, p, "F", OPC, lambda *a: None)
+        assert tarea["docs"] is None
+    # Sin carpeta: campo "Sin carpeta" y sin checklist.
+    p = planificar(_ev("SIN_CARPETA"), tarea, r, None)
+    assert p.docs_ok_nuevo == "Sin carpeta" and p.items == []
+
+
+def test_texto_item_comprimido_y_pistas_de_codigo():
+    from audit_docs.sync_checklists import items_deseados
+    r = Reglas.cargar()
+    ev = _ev(oferta_enviada=dict(cumple=False, causa="oferta_comprimida"),
+             propuesta_economica=dict(cumple=False, pista_codigo="sin_codigo"),
+             propuesta_tecnica=dict(cumple=False, pista_codigo="otro_anio"))
+    t = {i["etiqueta"]: i["nombre"] for i in items_deseados(ev, r)}
+    assert t["oferta"] == "[oferta] Oferta enviada en 04 — hay un .zip en 04: subir el PDF de lo enviado por separado"
+    assert t["economica"] == "[economica] Propuesta económica — hay un Excel sin código en 03: renombrar o reemplazar"
+    assert t["tecnica"].endswith("otro año: renombrar")

@@ -338,12 +338,12 @@ def _clasificar(f: Fila, reglas: Reglas) -> None:
         if not (ev["coincidencias"] or ev["por_revisar"]) and r.pista_subcarpeta and f.subs.get(r.pista_subcarpeta):
             # La pista siempre exige el código de la tarea: un PDF cualquiera en 03 no es la oferta.
             pista = [n for n in r.coincidencias(f.subs[r.pista_subcarpeta].archivos) if codigo_archivo(n) == f.codigo]
-        cumple = bool(ev["coincidencias"] or ev["por_revisar"])
-        # Causa (solo reglas con pista, hoy oferta_enviada): oferta_mal_ubicada / sin_oferta / por_revisar.
+        # Un .zip/.rar (patron_revisar) no cumple: no es evidencia de lo enviado hasta que alguien lo abra.
+        cumple = bool(ev["coincidencias"])
+        # Causa (solo reglas con pista, hoy oferta_enviada): oferta_comprimida / oferta_mal_ubicada / sin_oferta.
         causa = ""
-        if r.pista_subcarpeta:
-            causa = ("por_revisar" if not ev["coincidencias"] and ev["por_revisar"] else
-                     "" if cumple else "oferta_mal_ubicada" if pista else "sin_oferta")
+        if r.pista_subcarpeta and not cumple:
+            causa = "oferta_comprimida" if ev["por_revisar"] else "oferta_mal_ubicada" if pista else "sin_oferta"
         f.evaluacion.append({"regla": r, "aplica": r.id in aplicables, "nivel": r.nivel,
                              "cumple": cumple, **ev, "pista": pista, "causa": causa})
 
@@ -399,8 +399,8 @@ def _clasificar(f: Fila, reglas: Reglas) -> None:
     for e in f.evaluacion:
         if not e["aplica"]:
             continue
-        if e["por_revisar"]:
-            f.observaciones.append(f"{e['regla'].id} por revisar: {', '.join(e['por_revisar'])}")
+        if e["por_revisar"] and not e["coincidencias"]:
+            f.observaciones.append(f"{e['regla'].id}: solo comprimidos: {', '.join(e['por_revisar'])}")
         if not e["cumple"] and e["nivel"] == "advertencia":
             f.observaciones.append(f"advertencia: {e['regla'].id}")
         if e["pista"]:
@@ -532,7 +532,7 @@ def escribir_reporte(cu, drv, reglas, error_tis, filas: list[Fila], orfs: list, 
     adv = collections.Counter(e["regla"].id for f in evaluadas for e in f.evaluacion
                               if e["aplica"] and e["nivel"] == "advertencia" and not e["cumple"])
     L += ["", "Advertencias (no cuentan para INCOMPLETO): " + (", ".join(f"{k} {v}" for k, v in adv.items()) or "ninguna"),
-          f"Por revisar (calzan con patron_revisar): {sum(1 for f in evaluadas for e in f.evaluacion if e['aplica'] and e['por_revisar'] and not e['coincidencias'])}", "",
+          f"Oferta solo en comprimido (oferta_comprimida): {sum(1 for f in evaluadas if f.causa_oferta == 'oferta_comprimida')}", "",
           "Resultado por Tipo DEP:", ""]
     L += _tabla_cruzada(filas, lambda f: f.resultado, lambda f: f.tipo_dep or "(vacío)", "Resultado")
     L += ["", "Resultado por estado (solo Tipo DEP en alcance):", ""]
