@@ -15,12 +15,13 @@ subcarpetas:
 reglas:
   # Ajustes de la segunda corrida (2026-10-06, ver NOTAS_fase1.md): reglas de 03 desde ENVIADA,
   # económica como advertencia, técnica por nombre y código, oferta con .zip/.rar por revisar.
+  # Fase 2: la económica vuelve a ser faltante y exige el código de la tarea en el nombre.
   - id: propuesta_economica
-    descripcion: "Propuesta económica (Excel)"
+    descripcion: "Propuesta económica — Excel con el código de la propuesta en el nombre (detalle de cómo se calculó)"
     subcarpeta: tecnica_economica
     patron: '\.xlsx?$'
+    exigir_codigo: true
     desde_estado: ENVIADA
-    nivel: advertencia
 
   - id: propuesta_tecnica
     descripcion: "Propuesta técnica (PDF o Word con el código de la propuesta)"

@@ -89,13 +89,29 @@ def _fecha(v) -> dt.date | None:
     return v if isinstance(v, dt.date) else dt.date.fromisoformat(str(v))
 
 
-RE_CODIGO_ARCHIVO = re.compile(r"(\d{4})[.\-_ ](\d{4})")
+# Separador entre año y número: '.', '-', '_' o espacio, con espacios opcionales alrededor
+# ('2026.0152', '2026-0152', '2026 0152' y el de la plantilla del equipo, '2026 - 0152').
+RE_CODIGO_ARCHIVO = re.compile(r"(\d{4})\s*[.\-_ ]\s*(\d{4})")
 
 
 def codigo_archivo(nombre: str) -> str | None:
     """'PR.DEP.2026-0262 Evaluación.docx' -> '2026.0262' (primer código AAAA.NNNN del nombre)."""
     m = RE_CODIGO_ARCHIVO.search(nombre or "")
     return f"{m.group(1)}.{m.group(2)}" if m else None
+
+
+def pista_codigo(nombres: list[str], codigo: str) -> str:
+    """Por qué archivos que calzan con el patrón no sirven: 'otro_anio' si alguno lleva el número de la
+    tarea con otro año (PR.DEP.2025.0171 en la 2026.0171), si no 'sin_codigo' (sin código o con otro,
+    p. ej. la plantilla 2025.0000). '' si no hay archivos."""
+    if not nombres:
+        return ""
+    numero = codigo.split(".")[1]
+    for n in nombres:
+        c = codigo_archivo(n)
+        if c and c != codigo and c.split(".")[1] == numero:
+            return "otro_anio"
+    return "sin_codigo"
 
 
 @dataclass
@@ -122,11 +138,12 @@ class Regla:
         if self.exigir_codigo and codigo:
             coinc = [n for n in calzan if codigo_archivo(n) == codigo]
             otro = [n for n in calzan if codigo_archivo(n) != codigo]
+        pista = pista_codigo(otro, codigo) if self.exigir_codigo and codigo and not coinc else ""
         revisar = []
         if not coinc and self.patron_revisar:
             rr = re.compile(self.patron_revisar, re.IGNORECASE)
             revisar = [a["name"] for a in archivos if rr.search(a.get("name") or "")]
-        return {"coincidencias": coinc, "otro_codigo": otro, "por_revisar": revisar}
+        return {"coincidencias": coinc, "otro_codigo": otro, "por_revisar": revisar, "pista_codigo": pista}
 
 
 @dataclass

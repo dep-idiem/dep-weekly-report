@@ -12,6 +12,7 @@ import argparse
 import collections
 import csv
 import datetime as dt
+import itertools
 import logging
 import re
 import sys
@@ -216,6 +217,15 @@ class Fila:
     motivo: str = ""
     observaciones: list[str] = field(default_factory=list)
 
+    @property
+    def causa_oferta(self) -> str:
+        return next((e["causa"] for e in self.evaluacion if e["aplica"] and e["causa"]), "")
+
+    @property
+    def carpetas_vacias(self) -> bool:
+        """03 y 04 existen y no tienen ningún archivo (incluidas las subcarpetas leídas)."""
+        return bool(self.subs) and all(s.carpeta and not s.archivos for s in self.subs.values())
+
 
 def indice_por_codigo(dr: DriveClient, raices: dict[str, str]) -> dict[str, list[tuple[str, dict]]]:
     """codigo (2026.0157) -> [(ubicacion, carpeta)] entre los hijos de las ubicaciones conocidas."""
@@ -328,8 +338,14 @@ def _clasificar(f: Fila, reglas: Reglas) -> None:
         if not (ev["coincidencias"] or ev["por_revisar"]) and r.pista_subcarpeta and f.subs.get(r.pista_subcarpeta):
             # La pista siempre exige el código de la tarea: un PDF cualquiera en 03 no es la oferta.
             pista = [n for n in r.coincidencias(f.subs[r.pista_subcarpeta].archivos) if codigo_archivo(n) == f.codigo]
+        cumple = bool(ev["coincidencias"] or ev["por_revisar"])
+        # Causa (solo reglas con pista, hoy oferta_enviada): oferta_mal_ubicada / sin_oferta / por_revisar.
+        causa = ""
+        if r.pista_subcarpeta:
+            causa = ("por_revisar" if not ev["coincidencias"] and ev["por_revisar"] else
+                     "" if cumple else "oferta_mal_ubicada" if pista else "sin_oferta")
         f.evaluacion.append({"regla": r, "aplica": r.id in aplicables, "nivel": r.nivel,
-                             "cumple": bool(ev["coincidencias"] or ev["por_revisar"]), **ev, "pista": pista})
+                             "cumple": cumple, **ev, "pista": pista, "causa": causa})
 
     # Orden de decision: alcance por tipo -> sin link (historica / sin carpeta) -> link roto -> ubicacion
     # -> estado sin reglas -> reglas.
@@ -443,6 +459,26 @@ def seccion_paso0(cu: dict, drv: dict, reglas: Reglas, error_tis: str | None) ->
     return L
 
 
+def escribir_vacias(filas: list[Fila], fecha: dt.date) -> Path:
+    """Tareas evaluadas con 03 y 04 vacías, por JP y estado: lista para la reunión."""
+    v = sorted((f for f in filas if f.resultado in ("COMPLETO", "INCOMPLETO") and f.carpetas_vacias),
+               key=lambda f: (f.jp or "(sin JP)", f.estado, f.ss_code))
+    L = [f"# Propuestas con las carpetas 03 y 04 vacías ({fecha.isoformat()})", "",
+         f"{len(v)} propuestas de Ingeniería en DEP - CENTRAL / 01 Propuestas, en estados con reglas, sin ningún archivo "
+         "en «03 Propuesta Técnica y Económica» ni en «04 Oferta Enviada».", ""]
+    for jp, grupo in itertools.groupby(v, key=lambda f: f.jp or "(sin JP)"):
+        grupo = list(grupo)
+        L += [f"## {_md(jp)} ({len(grupo)})", "", "| Estado | Código | Nombre | Desde |", "|---|---|---|---|"]
+        for f in grupo:
+            nombre = f.nombre.split("|", 1)[1].strip() if "|" in f.nombre else f.nombre
+            L.append(f"| {_md(f.estado)} | {_md(f.ss_code)} | {_md(nombre)} | "
+                     f"{f.fecha_estado.date().isoformat() if f.fecha_estado else ''} |")
+        L.append("")
+    p = OUT / f"vacias_{fecha.isoformat()}.md"
+    p.write_text("\n".join(L) + "\n", encoding="utf-8")
+    return p
+
+
 def escribir_paso0(cu, drv, reglas, error_tis, fecha: dt.date) -> Path:
     OUT.mkdir(parents=True, exist_ok=True)
     p = OUT / f"paso0_{fecha.isoformat()}.md"
@@ -489,9 +525,8 @@ def escribir_reporte(cu, drv, reglas, error_tis, filas: list[Fila], orfs: list, 
         partes = []
         for e in f.evaluacion:
             if e["aplica"] and e["nivel"] == "faltante" and not e["cumple"]:
-                partes.append(e["regla"].id + (" (con archivo en " + reglas.subcarpetas[e["regla"].pista_subcarpeta][:2] + ")"
-                                               if e["pista"] else ""))
-        causas[" + ".join(partes)] += 1
+                partes.append(e["causa"] or e["regla"].id + (f"[{e['pista_codigo']}]" if e["pista_codigo"] else ""))
+        causas[" + ".join(partes) + (" (03 y 04 vacías)" if f.carpetas_vacias else "")] += 1
     L += ["INCOMPLETO por causa (reglas de nivel faltante no cumplidas):", "", "| Causa | Tareas |", "|---|---|"]
     L += [f"| {_md(k)} | {v} |" for k, v in causas.most_common()]
     adv = collections.Counter(e["regla"].id for f in evaluadas for e in f.evaluacion
@@ -600,6 +635,15 @@ def escribir_reporte(cu, drv, reglas, error_tis, filas: list[Fila], orfs: list, 
         c = f.encontrada_por_codigo
         L.append(f"| {_md(f.ss_code)} | {_md(f.estado)} | {_md(f.tipo_dep)} | {_md(c['carpeta']['name'])} | {_md(c['ubicacion'])} | {_link(c['carpeta']['id'])} |")
 
+    # Carpetas compartidas por más de una tarea
+    por_carpeta = collections.defaultdict(list)
+    for f in filas:
+        if f.carpeta_pr:
+            por_carpeta[f.carpeta_pr["id"]].append(f)
+    dup = {k: v for k, v in por_carpeta.items() if len(v) > 1}
+    L += ["", "### 7.4 Carpetas PR enlazadas desde más de una tarea", ""]
+    L += [f"- {', '.join(f'{x.ss_code} ({x.estado})' for x in v)} → {_md(v[0].carpeta_pr['name'])}" for v in dup.values()] or ["Ninguna."]
+
     # 8. Fuera de alcance
     fuera = [f for f in filas if f.resultado == "FUERA_DE_ALCANCE"]
     L += ["", f"## 8. Fuera de alcance ({len(fuera)})", "", "Ubicación de la carpeta × Tipo DEP (todas las tareas):", ""]
@@ -625,7 +669,7 @@ def escribir_reporte(cu, drv, reglas, error_tis, filas: list[Fila], orfs: list, 
         w.writerow(["task_id", "ss_code", "nombre", "estado", "estado_pipeline", "tipo_dep", "jp", "fecha_creada", "fecha_estado",
                     "fecha_fuente", "carpeta_encontrada", "enlace", "link_obsoleto", "carpeta_pr_id", "ubicacion", "regla",
                     "subcarpeta_esperada", "subcarpeta_real", "modo_subcarpeta", "n_archivos_subcarpeta", "aplica", "cumple",
-                    "n_coincidencias", "coincidencias", "nivel", "por_revisar", "otro_codigo", "pista",
+                    "n_coincidencias", "coincidencias", "nivel", "por_revisar", "otro_codigo", "pista", "causa", "pista_codigo",
                     "resultado_tarea", "motivo", "observaciones"])
         for f in filas:
             for e in f.evaluacion:
@@ -637,7 +681,7 @@ def escribir_reporte(cu, drv, reglas, error_tis, filas: list[Fila], orfs: list, 
                             reglas.subcarpetas[e["regla"].subcarpeta], (s.carpeta or {}).get("name", "") if s else "",
                             (s.modo or "") if s else "", len(s.archivos) if s else "", e["aplica"], e["cumple"],
                             len(e["coincidencias"]), "; ".join(e["coincidencias"]), e["nivel"], "; ".join(e["por_revisar"]),
-                            "; ".join(e["otro_codigo"]), "; ".join(e["pista"]), f.resultado, f.motivo,
+                            "; ".join(e["otro_codigo"]), "; ".join(e["pista"]), e["causa"], e["pista_codigo"], f.resultado, f.motivo,
                             "; ".join(f.observaciones)])
     # Inventario de archivos (una fila por archivo) en un CSV aparte para no mezclar granularidades.
     inv = OUT / f"recon_{fecha.isoformat()}_archivos.csv"
@@ -688,6 +732,7 @@ def main(argv: list[str] | None = None) -> int:
     filas = inventariar(d_cu["principales"], dr, reglas, fechas, indice_por_codigo(dr, d_dr["raices"]))
     orfs = huerfanas(dr, d_dr["raices"], filas)
     md, cs = escribir_reporte(d_cu, d_dr, reglas, error_tis, filas, orfs, fecha)
+    print(f"Vacías: {escribir_vacias(filas, fecha)}")
     print(f"Reporte: {md}\nCSV: {cs}\n(ClickUp: {cu.request_count} GET; Drive: {dr.request_count} GET)")
     return 0
 

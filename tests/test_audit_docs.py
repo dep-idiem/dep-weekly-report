@@ -90,21 +90,27 @@ def test_clasificar_orden_de_decision():
     _clasificar(f, r); assert f.resultado == "NO_APLICA"
 
 
-def test_clasificar_niveles_y_pista():
+def test_clasificar_economica_y_causa_oferta():
     from audit_docs.recon import _clasificar
     r = Reglas.cargar()
-    tec = {"name": "PR.DEP.2026.0001 Oferta.pdf"}
-    # Sin Excel (advertencia) y con 04 vacío pero la oferta en 03: INCOMPLETO solo por oferta_enviada, con pista.
-    f = _fila(link_pr="x", carpeta_encontrada="si", ubicacion=DEP, subs=_subs([tec], []))
+    tec, eco = {"name": "PR.DEP.2026.0001 Oferta.pdf"}, {"name": "Planilla PR.DEP.2026-0001.xlsx"}
+    # Económica: faltante y con el código de la tarea (un Excel con otro código no sirve).
+    f = _fila(link_pr="x", carpeta_encontrada="si", ubicacion=DEP, subs=_subs([tec, {"name": "Planilla 2025.0165.xlsx"}], []))
     _clasificar(f, r)
-    assert f.resultado == "INCOMPLETO"
     e = {x["regla"].id: x for x in f.evaluacion}
-    assert not e["propuesta_economica"]["cumple"] and e["propuesta_economica"]["nivel"] == "advertencia"
+    assert f.resultado == "INCOMPLETO" and not e["propuesta_economica"]["cumple"]
+    # 04 vacía y PDF con el código en 03: oferta_mal_ubicada.
+    assert e["oferta_enviada"]["causa"] == "oferta_mal_ubicada" == f.causa_oferta
     assert e["oferta_enviada"]["pista"] == ["PR.DEP.2026.0001 Oferta.pdf"]
-    # Con la oferta en 04 (aunque sea .rar): COMPLETO pese a la advertencia.
-    f = _fila(link_pr="x", carpeta_encontrada="si", ubicacion=DEP, subs=_subs([tec], [{"name": "Final.rar"}]))
+    # Sin PDF con el código en ninguna parte: sin_oferta.
+    f = _fila(link_pr="x", carpeta_encontrada="si", ubicacion=DEP, subs=_subs([{"name": "PR.DEP.2026.0001 a.docx"}, eco], []))
     _clasificar(f, r)
-    assert f.resultado == "COMPLETO" and any("por revisar" in o for o in f.observaciones)
+    assert f.causa_oferta == "sin_oferta" and f.resultado == "INCOMPLETO"
+    # Oferta en 04 como .rar: cuenta como cumplida en recon, causa por_revisar.
+    f = _fila(link_pr="x", carpeta_encontrada="si", ubicacion=DEP, subs=_subs([tec, eco], [{"name": "Final.rar"}]))
+    _clasificar(f, r)
+    assert f.resultado == "COMPLETO" and f.causa_oferta == "por_revisar"
+    assert any("por revisar" in o for o in f.observaciones)
 
 
 def test_leer_un_nivel_ignorando_old():
@@ -124,3 +130,59 @@ def test_leer_un_nivel_ignorando_old():
     _leer(s, DR(), Reglas.cargar(), "03", "", 1)
     assert [a["name"] for a in s.archivos] == ["b.pdf", "a.docx"]
     assert s.ignoradas == ["OLD"] and s.subcarpetas == ["Rev 1", "Rev 1/Sub (no leída)"]
+
+
+class _CUFalso:
+    """Cliente de escritura falso: guarda el valor del campo por tarea y registra las llamadas."""
+
+    def __init__(self, valores):
+        self.valores, self.llamadas = dict(valores), []
+
+    def get(self, path, params=None):
+        tid = path.rsplit("/", 1)[1]
+        return {"custom_fields": [{"id": "F", "value": self.valores.get(tid)}]}
+
+    def set_campo(self, tid, fid, valor):
+        self.llamadas.append(("set", tid, valor)); self.valores[tid] = valor; return 200
+
+    def borrar_campo(self, tid, fid):
+        self.llamadas.append(("del", tid)); self.valores[tid] = None; return 200
+
+
+def test_fix_links_apply_respalda_y_revert(tmp_path):
+    import csv
+    from audit_docs.fix_links import COLUMNAS, aplicar, revertir
+    entrada = tmp_path / "fix_links_2026-10-06.csv"
+    filas = [dict(task_id="t1", ss_code="2026.0304", estado="intake", campo="Drive PR URL", field_id="F",
+                  valor_actual="L-backup", valor_nuevo="L-pr", motivo="A1", carpeta="PR", ubicacion="DEP"),
+             dict(task_id="t2", ss_code="2026.0278", estado="intake", campo="Drive PR URL", field_id="F",
+                  valor_actual="L-viejo", valor_nuevo="L-pr2", motivo="A1", carpeta="PR", ubicacion="DEP"),
+             dict(task_id="t3", ss_code="2026.0150", estado="enviada", campo="Drive PR URL", field_id="F",
+                  valor_actual="", valor_nuevo="L-pr3", motivo="A3", carpeta="PR", ubicacion="DEP")]
+    with entrada.open("w", encoding="utf-8-sig", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=COLUMNAS); w.writeheader(); w.writerows(filas)
+    # t2 cambió a mano desde el dry-run: no se escribe. A3 no está autorizado: no se toca.
+    cu = _CUFalso({"t1": "L-backup", "t2": "otro", "t3": None})
+    assert aplicar(cu, entrada, {"A1"}, None, "ahora") == 0
+    assert cu.llamadas == [("set", "t1", "L-pr")]
+    backup = tmp_path / "fix_links_2026-10-06_backup.csv"
+    assert [r["valor_anterior"] for r in csv.DictReader(backup.open(encoding="utf-8-sig"))] == ["L-backup", "otro"]
+    # Reaplicar no vuelve a escribir (el valor vivo ya no es el del dry-run).
+    cu.llamadas.clear(); aplicar(cu, entrada, {"A1"}, None, "ahora"); assert cu.llamadas == []
+    # Revert de una sola tarea: vuelve al primer valor respaldado.
+    revertir(cu, backup, {"2026.0304"}, "ahora")
+    assert cu.valores["t1"] == "L-backup" and cu.llamadas == [("set", "t1", "L-backup")]
+
+
+def test_codigo_plantilla_y_pistas():
+    from audit_docs.reglas import codigo_archivo, pista_codigo
+    assert codigo_archivo("Planilla Base PR DEP 2026 - 0221.xlsx") == "2026.0221"
+    assert codigo_archivo("PR.DEP.2026 0152.xlsx") == codigo_archivo("PR_DEP_2026_0152.xls") == "2026.0152"
+    eco, tec = Reglas.cargar().reglas[0], Reglas.cargar().reglas[1]
+    assert eco.evaluar([{"name": "Planilla Base PR DEP 2026 - 0221.xlsx"}], "2026.0221")["coincidencias"]
+    assert eco.evaluar([{"name": "PR.DEP.2025.0000 ECO (uso público) v.0.xlsx"}], "2026.0177")["pista_codigo"] == "sin_codigo"
+    assert eco.evaluar([{"name": "Planilla Base PR DEP 2026.xlsx"}], "2026.0153")["pista_codigo"] == "sin_codigo"
+    # Año equivocado: la misma pista en la económica y en la técnica.
+    archivos = [{"name": "PR.DEP.2025.0171 GDS.xlsx"}, {"name": "PR.DEP.2025.0171 - Evaluacion.docx"}]
+    assert eco.evaluar(archivos, "2026.0171")["pista_codigo"] == tec.evaluar(archivos, "2026.0171")["pista_codigo"] == "otro_anio"
+    assert eco.evaluar([], "2026.0171")["pista_codigo"] == "" and pista_codigo([], "2026.0171") == ""
