@@ -29,6 +29,7 @@ from .proyecto import NO_APLICA
 
 FASE, PAQUETE, PORCION, OTRA = "fase", "paquete", "porcion", "otra"
 MANUAL, PORCIONES, SIN_DATO = "manual", "porciones", "sin_dato"
+CERRADO, CONSUMO = "cerrado", "consumo"         # solo listas v2 (v2.py)
 NUMERADA = re.compile(r"^\s*\d{1,2}(\.\d+)*(\.[a-z])?\b", re.I)
 PERIODO = re.compile(r"\b(ene|feb|mar|abr|may|jun|jul|ago|sep|sept|oct|nov|dic|enero|febrero|marzo|abril|mayo|junio|"
                      r"julio|agosto|septiembre|octubre|noviembre|diciembre)\b|mensual|n°\s*\d", re.I)
@@ -62,6 +63,9 @@ def _forma_de_porcion(t: Task) -> bool:
 
 
 def clasificar(tareas: Sequence[Task]) -> dict[str, Clase]:
+    """En una lista v2 (v2.py) un cajón de primer nivel con HH es un paquete normal, sin `es_fase`."""
+    from .v2 import es_v2
+    v2 = es_v2(tareas)
     por_id = {t.id: t for t in tareas}
     hijos: dict[str, list[Task]] = defaultdict(list)
     for t in tareas:
@@ -78,10 +82,10 @@ def clasificar(tareas: Sequence[Task]) -> dict[str, Clase]:
     base: dict[str, Clase] = {}
     for t in tareas:
         n, hoja, hh = nivel(t), not hijos.get(t.id), hh_de(t)
-        if n == 0 and (hh <= 0 or es_administracion(t)):
+        if n == 0 and (hh <= 0 or (es_administracion(t) and not v2)):
             base[t.id] = Clase(FASE, n)
         elif n == 0:
-            base[t.id] = Clase(PAQUETE, n, bool(PERIODO.search(t.name or "")), es_fase=True)
+            base[t.id] = Clase(PAQUETE, n, bool(PERIODO.search(t.name or "")), es_fase=not v2)
         elif hh > 0:
             hermanas = [h for h in hijos.get(t.parent, []) if h.id != t.id]
             repite = any(h.name.strip().lower() == t.name.strip().lower() for h in hermanas)
@@ -129,9 +133,17 @@ def solo_porciones_debajo(tareas: Sequence[Task], clases: Mapping[str, Clase]) -
     return {p for p, hs in hijos.items() if hs and all(clases.get(h, Clase(OTRA, 0)).tipo == PORCION for h in hs)}
 
 
-def avance_efectivo(tareas: Sequence[Task], clases: Mapping[str, Clase]) -> dict[str, tuple[float | None, str]]:
+def avance_efectivo(tareas: Sequence[Task], clases: Mapping[str, Clase],
+                    gastadas: Mapping[str, float] | None = None) -> dict[str, tuple[float | None, str]]:
     """Paquete -> (avance 0-1, origen). Manual si es > 0; si no y tiene porciones (sin No Aplica), la fraccion de
-    porciones en estado de tipo cerrado; si no, sin_dato (se conserva el valor manual, 0 o vacio)."""
+    porciones en estado de tipo cerrado; si no, sin_dato (se conserva el valor manual, 0 o vacio).
+
+    Lista v2 (v2.py), paquete de primer nivel (cajón): cerrado = 1 (origen `cerrado`); si no, manual si es > 0; si no,
+    por consumo: min(horas del cajón y sus descendientes / HH Presupuestadas, 90 %) (origen `consumo`). `gastadas`:
+    task_id -> horas acumuladas en ancestros (adaptador_clickup.horas_por_tarea)."""
+    from .v2 import TOPE_CONSUMO, es_v2
+    v2 = es_v2(tareas)
+    gastadas = gastadas or {}
     por_id = {t.id: t for t in tareas}
     porc = porciones_de(clases)
     out = {}
@@ -140,6 +152,15 @@ def avance_efectivo(tareas: Sequence[Task], clases: Mapping[str, Clase]) -> dict
             continue
         t = por_id[tid]
         manual = t.cf(CAMPO_AVANCE)
+        if v2 and c.nivel == 0:
+            hh = hh_de(t)
+            if t.cerrada:
+                out[tid] = (1.0, CERRADO)
+            elif manual:
+                out[tid] = (manual, MANUAL)
+            else:
+                out[tid] = (min(gastadas.get(tid, 0.0) / hh, TOPE_CONSUMO) if hh else manual, CONSUMO)
+            continue
         ps = [por_id[p] for p in porc.get(tid, []) if not es_no_aplica(por_id[p])]
         if manual:
             out[tid] = (manual, MANUAL)

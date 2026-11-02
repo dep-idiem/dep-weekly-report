@@ -48,7 +48,9 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                    ("fecha_inicio", FECHA), ("fecha_entrega_contractual", FECHA), ("task_id", TEXTO),
                    ("task_nombre", TEXTO), ("fase", TEXTO), ("hh", NUMERO), ("start", FECHA), ("due", FECHA)],
     "metricas_semanales": [("corte", FECHA)] + CORTE + [("list_id", TEXTO)] + IDENT
-                          + [("rev_linea_base", ENTERO), ("tiene_linea_base", BOOLEANO), ("modo_calculo", TEXTO)] + METRICAS
+                          # linea_base_provisional: lista v2 sin Rev. 0; el programado sale de los cajones vigentes (v2.py)
+                          + [("rev_linea_base", ENTERO), ("tiene_linea_base", BOOLEANO),
+                             ("linea_base_provisional", BOOLEANO), ("modo_calculo", TEXTO)] + METRICAS
                           + [("desviacion_pts", NUMERO), ("pct_presupuesto_usado", NUMERO), ("titular", TEXTO),
                              ("n_advertencias", ENTERO)]
                           # Presupuesto contractual (presupuesto.py)

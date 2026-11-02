@@ -27,7 +27,7 @@ from .proyecto import (ADV_FASE_OTRO_PROYECTO, ADV_FUERA_DE_PLAZO, ADV_HORAS_ADM
                        ADV_LISTA_COMBINADA, ADV_TT_SIN_CLICKUP, Aviso, fases_por_tarea)
 
 ORIGENES_IMPORTADOS = frozenset({"api"})
-FASE_ADMINISTRACION = re.compile(r"^\s*0?0\b")          # "00 Administración"
+FASE_ADMINISTRACION = re.compile(r"^\s*0?0\s+administraci", re.I)   # "00 Administración" (y cierre); no "00 Costeo"
 CODIGO_EN_TEXTO = re.compile(r"(\d{4}\.\d{4}(?:-\d{4})?)")
 
 
@@ -183,7 +183,7 @@ def horas_en_padres(tareas: Sequence[TareaMetrica], horas: Sequence[Horas]) -> l
 
 
 def horas_en_administracion(tareas: Sequence[TareaMetrica], horas: Sequence[Horas], umbral: float,
-                            minimo_h: float = 0.0) -> list[Aviso]:
+                            minimo_h: float = 0.0, v2: bool = False) -> list[Aviso]:
     """Horas en la fase 00 Administracion sobre `umbral` (fraccion) del proyecto y de al menos `minimo_h` horas."""
     total = sum(h.horas for h in horas)
     if not total:
@@ -193,7 +193,8 @@ def horas_en_administracion(tareas: Sequence[TareaMetrica], horas: Sequence[Hora
     if admin / total <= umbral or admin < minimo_h:
         return []
     return [Aviso(ADV_HORAS_ADMIN, "", f"{admin:.1f} h de {total:.1f} ({admin / total:.0%}) en la fase 00 Administración "
-                                       f"(umbral {umbral:.0%})", {"horas": admin, "fraccion": admin / total, "umbral": umbral})]
+                                       f"(umbral {umbral:.0%})", {"horas": admin, "fraccion": admin / total, "umbral": umbral,
+                                                                    "v2": v2})]
 
 
 def horas_fuera_de_plazo(horas: Sequence[Horas], inicio: dt.date | None, fin: dt.date | None) -> list[Aviso]:

@@ -69,6 +69,7 @@ class Task:
     status_type: str = ""       # open / custom / done / closed
     date_created: dt.datetime | None = None
     date_done: dt.datetime | None = None    # cuando paso a un estado cerrado (date_done o date_closed de la API)
+    tags: tuple[str, ...] = ()              # nombres de las etiquetas de la tarea
 
     @property
     def cerrada(self) -> bool:

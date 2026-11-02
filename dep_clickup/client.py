@@ -253,6 +253,7 @@ def parse_task(t: dict, list_id: str = "") -> Task:
         status_type=((t.get("status") or {}).get("type") or ""),
         date_created=ms_to_local(t.get("date_created")),
         date_done=ms_to_local(t.get("date_done") or t.get("date_closed")),
+        tags=tuple((g.get("name") or "").strip() for g in t.get("tags") or [] if isinstance(g, dict)),
     )
 
 

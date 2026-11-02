@@ -4,7 +4,9 @@ Las filas de la linea base solo se agregan; nunca se modifican ni se borran. La 
 proyecto es la de numero mas alto.
 
 Disparador de la Rev. 0: la tarea "1.2 ..." de la fase "01 ..." pasa a un estado de tipo cerrado
-(grupos "done" o "closed" de ClickUp), excepto "No Aplica".
+(grupos "done" o "closed" de ClickUp), excepto "No Aplica". En una lista v2 (v2.py) no hay tarea 1.2: la Rev. 0
+se congela con lo primero entre la primera hora registrada y la primera porción creada (v2.evento_congelar); hasta
+entonces el estado es "provisional" y el programado sale de los cajones vigentes (run.procesar_lista).
 
 Uso (revision manual):
     python -m dep_reportes.linea_base revisar --list-id <id> --motivo "..." [--tipo tardia] [--dry-run]
@@ -25,6 +27,8 @@ from .adaptador_clickup import a_tareas_metrica
 from .metricas import TareaMetrica
 from .proyecto import (ADV_SIN_TAREA_12, ADV_TAREA_12_NO_APLICA, ADV_VARIAS_TAREAS_12, NO_APLICA,
                        Aviso, es_no_aplica, fases_por_tarea)
+
+PROVISIONAL = "provisional"
 
 # incremental: paquete creado despues de la revision vigente, congelado al aparecer con HH y fechas (misma rev).
 TIPOS = ("normal", "tardia", "importada_excel", "revision", "incremental")
@@ -158,19 +162,26 @@ class Decision:
     estado: str          # "vigente" | "sin_linea_base"
     en_planificacion: bool
     avisos: tuple[Aviso, ...]
+    motivo: str | None = None   # texto de la Rev. 0 automática (v2: el evento que la disparó)
 
 
 def decidir(list_id: str, tareas: Sequence[Task], existentes: Sequence[FilaLB], observada_antes: bool,
-            primera_corrida: bool, importables: Sequence[str] = ()) -> Decision:
+            primera_corrida: bool, importables: Sequence[str] = (), evento_v2: str | None = None) -> Decision:
     """Que hacer con la linea base de un proyecto en este corte.
 
     observada_antes: la lista ya aparecia en cortes anteriores (fotos_tareas).
     primera_corrida: no hay ninguna ejecucion de escritura previa.
+    evento_v2: en una lista v2, lo que dispara la Rev. 0 (v2.evento_congelar) o None si todavia no pasa.
     """
+    from .v2 import es_v2
     if vigente(existentes, list_id):
         return Decision("ninguna", None, "vigente", False, ())
     if list_id in importables:
         return Decision("importar", "importada_excel", "vigente", False, ())
+    if es_v2(tareas):
+        if evento_v2:
+            return Decision("congelar", "normal", "vigente", False, (), f"Rev. 0 automática (v2: {evento_v2})")
+        return Decision("ninguna", None, PROVISIONAL, False, ())
     t12 = tareas_12(tareas)
     avisos: list[Aviso] = []
     if len(t12) > 1:

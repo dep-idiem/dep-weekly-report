@@ -95,8 +95,25 @@ def miles(x: float) -> str:
     return f"{x:,.0f}".replace(",", ".")
 
 
+PROVISIONAL = "Programado provisional (lista v2 aún sin línea base congelada). "
+CONSUMO_TODO, CONSUMO_PARCIAL = "por consumo, tope 90 %", "parte por consumo, tope 90 %"
+
+
+def avance_por_consumo(origenes: Mapping[str, str]) -> str | None:
+    """Nota del avance real cuando sale de horas / HH (cajones v2 sin avance manual; estructura.avance_efectivo):
+    «por consumo, tope 90 %» si todos los paquetes con origen lo usan, «parte por consumo…» si solo algunos."""
+    n = sum(1 for o in origenes.values() if o == "consumo")
+    if not n:
+        return None
+    return CONSUMO_TODO if n == len(origenes) else CONSUMO_PARCIAL
+
+
 def titular(tiene_linea_base: bool, avance_real: float | None, avance_prog: float | None,
-            motivo: str | None = None, presupuesto: Mapping | None = None) -> str:
+            motivo: str | None = None, presupuesto: Mapping | None = None, provisional: bool = False,
+            consumo: str | None = None) -> str:
+    """provisional: el programado sale de los cajones vigentes (v2); consumo: nota de avance_por_consumo."""
+    if provisional:
+        return PROVISIONAL + titular(True, avance_real, avance_prog, motivo, presupuesto, False, consumo)
     if not tiene_linea_base:
         p = presupuesto or {}
         if p.get("hh_contrato") and p.get("pct_contrato_usado") is not None:
@@ -113,7 +130,8 @@ def titular(tiene_linea_base: bool, avance_real: float | None, avance_prog: floa
     if avance_real is None:
         return f"Sin avance real registrado frente a {pct(avance_prog)} programado."
     d = desviacion_pts(avance_real, avance_prog)
-    base = f"Avance real {pct(avance_real)} frente a {pct(avance_prog)} programado: "
+    nota = f" ({consumo})" if consumo else ""
+    base = f"Avance real {pct(avance_real)}{nota} frente a {pct(avance_prog)} programado: "
     if abs(d) < UMBRAL_EN_LINEA_PTS:
         return base + "en línea con el plan."
     return base + f"{num(abs(d))} puntos {'bajo' if d < 0 else 'sobre'} el plan."
@@ -122,12 +140,19 @@ def titular(tiene_linea_base: bool, avance_real: float | None, avance_prog: floa
 def derivadas_semanales(fila: Mapping, motivo: str | None = None) -> dict:
     """Columnas de presentacion de una fila de metricas_semanales (tambien para filas antiguas)."""
     tiene = fila.get("rev_linea_base") is not None
+    prov = bool(fila.get("linea_base_provisional")) and not tiene
+    con_prog = tiene or prov
     return {
         "tiene_linea_base": tiene,
-        "desviacion_pts": desviacion_pts(fila.get("avance_real"), fila.get("avance_prog")) if tiene else None,
-        "pct_presupuesto_usado": pct_presupuesto_usado(fila.get("hh_gastadas_acum"), fila.get("total_hh")) if tiene else None,
-        "titular": titular(tiene, fila.get("avance_real"), fila.get("avance_prog"), motivo, fila),
+        "desviacion_pts": desviacion_pts(fila.get("avance_real"), fila.get("avance_prog")) if con_prog else None,
+        "pct_presupuesto_usado": pct_presupuesto_usado(fila.get("hh_gastadas_acum"), fila.get("total_hh")) if con_prog else None,
+        "titular": titular(tiene, fila.get("avance_real"), fila.get("avance_prog"), motivo, fila, prov,
+                           fila.get("avance_por_consumo")),
     }
+
+
+def _admin(d: Mapping) -> str:
+    return "00 Administración y cierre" if d.get("v2") else "00 Administración"
 
 
 def dias_habiles_para_entrega(corte: dt.date, entrega: dt.date | None, cal) -> int | None:
@@ -313,8 +338,8 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
         if "fraccion" in d and "horas" in d:
             umbral = f", sobre el umbral de {num(d['umbral'] * 100, 0)} %" if "umbral" in d else ""
             return (f"El {num(d['fraccion'] * 100, 0)} % de las horas del proyecto ({num(d['horas'])} h) está en "
-                    f"00 Administración{umbral}")
-        return "Demasiadas horas del proyecto están en 00 Administración"
+                    f"{_admin(d)}{umbral}")
+        return f"Demasiadas horas del proyecto están en {_admin(d)}"
     if tipo == "horas_fuera_de_plazo":
         partes = []
         if d.get("n_antes"):
@@ -334,7 +359,8 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
         cuanto = f"{hh(d['hh'])} HH Presupuestadas" if "hh" in d else "HH Presupuestadas"
         return f"{t} tiene forma de porción semanal pero lleva {cuanto}"
     if tipo == "sin_presupuesto_contractual":
-        return "El proyecto no tiene presupuesto contractual cargado (HH Presupuestadas en 00 Administración)"
+        return ("El proyecto no tiene presupuesto contractual cargado ("
+                + ("HH Presupuestadas en los cajones)" if d.get("v2") else "HH Presupuestadas en 00 Administración)"))
     if tipo == "presupuesto_por_agotarse":
         if d.get("superado"):
             return f"Presupuesto contractual superado: {num((d.get('pct') or 0) * 100, 0)} % usado"

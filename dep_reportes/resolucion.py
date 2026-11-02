@@ -203,9 +203,12 @@ CATALOGO.update({
         impacto_por_contexto=lambda c: INFORMATIVA if (c.datos or {}).get("paquete_con_porciones") else None),
     "horas_en_administracion": Entrada(
         "Las horas registradas en la fase 00 Administración superan el umbral del proyecto (config/reportes.json).",
-        JP, DISTORSIONA, DISTORSIONA, lambda c, a: f"En la lista {_l(c)}, registra en las subtareas del trabajo "
-                                                   "realizado las horas que hoy van a «00 Administración»; deja ahí "
-                                                   "solo la gestión del proyecto."),
+        JP, DISTORSIONA, DISTORSIONA,
+        lambda c, a: (f"En la lista {_l(c)}, registra en los cajones del trabajo realizado (o en sus porciones) las "
+                      "horas que hoy van a «00 Administración y cierre»; deja ahí solo la gestión y el cierre."
+                      if (c.datos or {}).get("v2") else
+                      f"En la lista {_l(c)}, registra en las subtareas del trabajo realizado las horas que hoy van a "
+                      "«00 Administración»; deja ahí solo la gestión del proyecto.")),
     "horas_fuera_de_plazo": Entrada(
         "Hay entradas de tiempo antes del inicio o después del término del proyecto.",
         JP, DISTORSIONA, DISTORSIONA, lambda c, a: f"En la lista {_l(c)}, corrige la fecha o la tarea de las entradas "
@@ -230,11 +233,13 @@ CATALOGO.update({
 
 def _presupuesto(c: Contexto, adm: str) -> str:
     d = c.datos or {}
+    donde = ("las HH Presupuestadas de los cajones que cambian (el presupuesto es su suma)" if d.get("v2")
+             else "las HH Presupuestadas de «00 Administración»")
     if d.get("superado"):
         return (f"Revisa con {adm} el presupuesto de la lista {_l(c)}: ya se superó. Si hay ampliación de contrato, "
-                "actualiza las HH Presupuestadas de «00 Administración».")
+                f"actualiza {donde}.")
     return (f"Revisa con {adm} el plan de {_l(c)}: el presupuesto se agota pronto. Si hay ampliación, actualiza "
-            "las HH de «00 Administración».")
+            f"{donde}.")
 
 
 CATALOGO.update({
@@ -251,8 +256,10 @@ CATALOGO.update({
     "sin_presupuesto_contractual": Entrada(
         "El proyecto no tiene presupuesto contractual: no se puede controlar el consumo de HH frente a lo contratado.",
         JP, IMPIDE_PRESUPUESTO, IMPIDE_PRESUPUESTO,
-        lambda c, a: f"En la lista {_l(c)}, carga las HH contratadas en el campo HH Presupuestadas de la tarea "
-                     "«00 Administración»."),
+        lambda c, a: (f"En la lista {_l(c)}, carga las HH contratadas en el campo HH Presupuestadas de cada cajón."
+                      if (c.datos or {}).get("v2") else
+                      f"En la lista {_l(c)}, carga las HH contratadas en el campo HH Presupuestadas de la tarea "
+                      "«00 Administración».")),
     "presupuesto_por_agotarse": Entrada(
         "El presupuesto contractual está superado o se agota en menos de 4 semanas al ritmo de las últimas 4.",
         JP, INFORMATIVA, INFORMATIVA, _presupuesto, prioridad=ALTA),

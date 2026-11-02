@@ -1,6 +1,6 @@
 """Presupuesto contractual del proyecto. Funciones puras.
 
-Fuente: HH Presupuestadas de la tarea "00 Administracion" de la lista (la API no expone campos de la lista), o
+Fuente: HH Presupuestadas de la tarea "00 Administracion" de la lista (en listas v2, la suma de los cajones) (la API no expone campos de la lista), o
 config/presupuestos.json (codigo -> HH) para casos especiales, que manda sobre la tarea. Las HH de 00 Administracion
 NO entran al universo de la curva S (adaptador_clickup.a_tarea_metrica).
 """
@@ -22,6 +22,9 @@ SEMANAS_ALERTA = 4
 def hh_contrato(tareas: Sequence[Task], manual: float | None = None) -> float | None:
     if manual:
         return float(manual)
+    from .v2 import es_v2
+    if es_v2(tareas):                       # v2: suma de los cajones (tareas de primer nivel con HH)
+        return sum(hh_de(t) for t in tareas if not t.parent) or None
     v = sum(hh_de(t) for t in tareas if es_administracion(t))
     return v or None
 
@@ -43,14 +46,17 @@ def metricas(contrato: float | None, gastadas: float | None, horas: Sequence[Hor
     return out
 
 
-def avisos(m: dict, alerta_semanas: float = SEMANAS_ALERTA) -> list[Aviso]:
+def avisos(m: dict, alerta_semanas: float = SEMANAS_ALERTA, v2: bool = False) -> list[Aviso]:
+    """v2: lista con estructura de cajones (v2.py); cambia el texto (el presupuesto es la suma de los cajones)."""
     if not m.get("hh_contrato"):
-        return [Aviso(ADV_SIN_PRESUPUESTO, "", "Sin HH Presupuestadas en 00 Administración ni en config/presupuestos.json")]
+        donde = "los cajones" if v2 else "00 Administración"
+        return [Aviso(ADV_SIN_PRESUPUESTO, "", f"Sin HH Presupuestadas en {donde} ni en config/presupuestos.json",
+                      {"v2": v2})]
     pct, sem = m.get("pct_contrato_usado"), m.get("semanas_restantes_al_ritmo")
     superado = pct is not None and pct >= 1
     if superado or (sem is not None and sem < alerta_semanas):
         return [Aviso(ADV_PRESUPUESTO_POR_AGOTARSE, "",
                       f"Presupuesto usado {pct:.0%}" + ("" if superado else f"; se agota en {sem:.1f} semanas al ritmo actual"),
                       {"pct": pct, "superado": superado, "semanas": sem, "fecha": m.get("fecha_agotamiento_estimada"),
-                       "contrato": m["hh_contrato"]})]
+                       "contrato": m["hh_contrato"], "v2": v2})]
     return []

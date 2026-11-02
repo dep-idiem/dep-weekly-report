@@ -30,7 +30,7 @@ from dep_clickup.naming import list_code
 from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, presentacion as PR, proyecto as P
 from . import horas as H, personas as PERS, reproceso as REP, resolucion as RES
 from . import estructura as EST, finalizados as FIN, metricas as MT, plan_semanal as PS, presupuesto as PRES
-from . import programas as PG
+from . import programas as PG, v2 as V2
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
 from .config_reportes import (DRY_RUN_DIR, FOLDER_PJ_INGENIERIA, FOLDER_PROYECTOS_FINALIZADOS, IMPORTADAS, RESPALDOS_DIR,
@@ -149,13 +149,18 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     que no aplican a la lista (programa de servicio continuo, programas.py)."""
     codigo = codigo or list_code(lista.name) or lista.id
     tm_manual = a_tareas_metrica(tareas)
-    # Capa de porciones (estructura.py): avance del paquete desde sus porciones cuando no hay avance manual.
+    horas = a_horas(entradas_lista)
+    es_v2 = V2.es_v2(tareas)
+    # Capa de porciones (estructura.py): avance del paquete desde sus porciones cuando no hay avance manual; en listas
+    # v2, cajón cerrado o avance por consumo (horas / HH, tope 90 %).
     clases = EST.clasificar(tareas)
-    av = EST.avance_efectivo(tareas, clases)
-    tm = [replace(t, avance=av[t.id][0]) if av.get(t.id, (None, ""))[1] == EST.PORCIONES else t for t in tm_manual]
+    gastadas_t = horas_por_tarea([h for h in horas if h.fecha <= corte], {t.id: t.parent for t in tm_manual},
+                                 acumular_en_ancestros=True) if es_v2 else None
+    av = EST.avance_efectivo(tareas, clases, gastadas_t)
+    calculado = (EST.PORCIONES, EST.CERRADO, EST.CONSUMO)
+    tm = [replace(t, avance=av[t.id][0]) if av.get(t.id, (None, ""))[1] in calculado else t for t in tm_manual]
     paquetes = {tid for tid, c in clases.items() if c.tipo == EST.PAQUETE}
     con_porciones = EST.porciones_de(clases)
-    horas = a_horas(entradas_lista)
     jp = buscar_jp(lista, miembros)
     avisos: list[P.Aviso] = []
     if comparten_codigo:
@@ -174,7 +179,8 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
             f"Responsable \"{lista.assignee_username}\" no se encontró entre los miembros"
         avisos.append(P.Aviso(P.ADV_SIN_JP, "", det, {"responsable": lista.assignee_username}))
 
-    dec = LB.decidir(lista.id, tareas, lb_exist, observada_antes, primera_corrida, tuple(IMPORTADAS))
+    evento_v2 = V2.evento_congelar(tareas, [h.fecha for h in horas], corte) if es_v2 else None
+    dec = LB.decidir(lista.id, tareas, lb_exist, observada_antes, primera_corrida, tuple(IMPORTADAS), evento_v2)
     if situacion.finalizado:
         dec = replace(dec, accion="ninguna")
     avisos += dec.avisos
@@ -184,7 +190,7 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                                "ultimo_corte_en_curso": situacion.ultimo_corte_en_curso}))
     nuevas: list[LB.FilaLB] = []
     if dec.accion == "congelar":
-        nuevas = LB.congelar(lista, tareas, 0, dec.tipo, f"Rev. 0 automática ({dec.tipo})", ahora,
+        nuevas = LB.congelar(lista, tareas, 0, dec.tipo, dec.motivo or f"Rev. 0 automática ({dec.tipo})", ahora,
                              excluir_no_aplica=modo.excluir_no_aplica)
     elif dec.accion == "importar":
         imp = IMPORTADAS[lista.id]
@@ -212,6 +218,9 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     if dec.en_planificacion:
         avisos.append(P.Aviso(P.ADV_EN_PLANIFICACION, "", "Tarea 1.2 abierta: proyecto en planificación, sin línea base"))
     lb_tareas, fase_lb = LB.a_tareas(lb_filas) if lb_filas else (None, {})
+    if not lb_filas and dec.estado == LB.PROVISIONAL:
+        # v2 sin Rev. 0: programado PROVISIONAL con las HH y fechas vigentes de los cajones (no se guarda).
+        lb_tareas = [t for t in MT.universo(tm) if not (modo.excluir_no_aplica and P.es_no_aplica(t))]
 
     fin = lista.due.date() if lista.due else None
     plan = EST.plan_porciones(tareas, clases)
@@ -245,10 +254,10 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                                   {"hh": t.hh}))
     # Presupuesto contractual y plan semanal
     pres = PRES.metricas(PRES.hh_contrato(tareas, presupuesto_manual), res.metricas["hh_gastadas_acum"], al_corte, corte)
-    avisos += PRES.avisos(pres)
+    avisos += PRES.avisos(pres, v2=es_v2)
     filas_ps = PS.filas(plan, al_corte, corte)
     avisos += PS.aviso_cumplimiento(filas_ps, corte)
-    avisos += H.horas_en_administracion(tm, al_corte, umbral_admin, MINIMO_HORAS_ADMINISTRACION)
+    avisos += H.horas_en_administracion(tm, al_corte, umbral_admin, MINIMO_HORAS_ADMINISTRACION, v2=es_v2)
     avisos += H.horas_fuera_de_plazo(al_corte, LB.inicio_proyecto(lista, tareas), fin)
     avisos += H.fases_de_otro_proyecto(tm, lista.name)
     avisos += H.lista_combinada(tm)
@@ -261,6 +270,12 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     # "Tarea padre con HH y subtareas sin HH" no aplica si todas las subtareas son porciones: es la estructura normal.
     normales = EST.solo_porciones_debajo(tareas, clases)
     detector = [a for a in detector if not (a.tipo == calidad.HH_EN_PADRE and a.tarea_id in normales)]
+    if es_v2:
+        # El cajón v2 lleva HH Presupuestadas y no time estimate: no es un problema de datos. Y en un cajón sin avance
+        # manual el avance sale por consumo (estructura.avance_efectivo): «horas sin avance» no aplica.
+        cajones = {tid for tid, c in clases.items() if c.tipo == EST.PAQUETE and c.nivel == 0}
+        detector = [a for a in detector if a.tipo != calidad.HH_VS_ESTIMATE
+                    and not (a.tipo == calidad.HORAS_SIN_AVANCE and a.tarea_id in cajones)]
     nombres = {f.task_id: f.task_nombre for f in lb_filas} | {t.id: t.nombre for t in tm}
     etiqueta, tiene_lb = PR.etiqueta_proyecto(codigo, nombre_corto), bool(lb_filas)
     adv = [fila_advertencia(corte, lista.id, a.tipo, a.task_id or "", a.detalle,
@@ -374,6 +389,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
              tipo_corte: str = E.OFICIAL) -> dict[str, list[dict]]:
     lid = r.lista.id
     rev = r.lb_filas[0].rev if r.lb_filas else None
+    prov = provisional(r)
     mt = r.resultado.metricas
     idn = identificacion(r)
     vigente = r.lista.due.date() if r.lista.due else None
@@ -386,7 +402,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
         "estado_lista": r.lista.status or "",
         "fecha_inicio": LB.inicio_proyecto(r.lista, r.tareas),
         "fecha_termino_vigente": r.lista.due.date() if r.lista.due else None,
-        "estado_linea_base": "vigente" if r.lb_filas else "sin_linea_base",
+        "estado_linea_base": "vigente" if r.lb_filas else LB.PROVISIONAL if prov else "sin_linea_base",
         "rev_vigente": rev, "actualizado_en": ahora,
         "estado_proyecto": r.situacion.estado, "corte_cierre": r.situacion.corte_cierre, **plazo,
     })
@@ -409,13 +425,14 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
         if sit.avisar:
             out["advertencias"] += [{**a, **tc, **idn} for a in r.advertencias if a["tipo"] == P.ADV_PROYECTO_FINALIZADO]
         return out
-    semanal = {**tc, "list_id": lid, **idn, "rev_linea_base": rev, "modo_calculo": modo.nombre,
+    semanal = {**tc, "list_id": lid, **idn, "rev_linea_base": rev, "linea_base_provisional": prov,
+               "avance_por_consumo": PR.avance_por_consumo(r.origen_avance), "modo_calculo": modo.nombre,
                **{c: mt.get(c) for c, _ in E.METRICAS}, "n_advertencias": len(r.advertencias), **r.presupuesto,
                "hh_estimadas_termino_plan_semanal": r.extra.get("hh_estimadas_plan_semanal"),
                "fecha_termino_usada": mt.get("fecha_termino_usada"),
                "dias_habiles_para_entrega": PR.dias_habiles_para_entrega(
                    corte, r.lista.due.date() if r.lista.due else None, modo.cal), **plazo}
-    motivo = None if r.lb_filas else PR.motivo_sin_linea_base(a["tipo"] for a in r.advertencias_todas)
+    motivo = None if (r.lb_filas or prov) else PR.motivo_sin_linea_base(a["tipo"] for a in r.advertencias_todas)
     out["metricas_semanales"].append(semanal | PR.derivadas_semanales(semanal, motivo))
     out["metricas_fase"] += [{**tc, "list_id": lid, **idn, **f} for f in r.resultado.fases]
     fases = P.fases_por_tarea(r.tm)
@@ -445,11 +462,17 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
 
 def _serie(r: ResultadoLista, tc: dict, idn: dict) -> list[dict]:
     mt = r.resultado.metricas
+    con_prog = bool(r.lb_filas) or provisional(r)
     return [{**tc, "list_id": r.lista.id, **idn, "fecha": p.fecha,
-             "hh_prog_acum": p.programadas if r.lb_filas else None,
+             "hh_prog_acum": p.programadas if con_prog else None,
              "hh_gastadas_acum": p.gastadas, "hh_proyectadas_acum": p.proyectadas,
-             "hh_linea_base": mt["total_hh"] if r.lb_filas else None}
+             "hh_linea_base": mt["total_hh"] if con_prog else None}
             for p in r.resultado.serie]
+
+
+def provisional(r: ResultadoLista) -> bool:
+    """Lista v2 sin Rev. 0: el programado sale de los cajones vigentes y se marca provisional en la hoja."""
+    return not r.lb_filas and r.decision.estado == LB.PROVISIONAL
 
 
 def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo: Modo | None = None,
@@ -819,7 +842,7 @@ def imprimir(c: Corrida, dry_run: bool) -> None:
           f"Sheets: {c.peticiones_sheets}")
     for r in c.listas:
         m = r.resultado.metricas
-        lb = f"{r.lb_filas[0].tipo} rev {r.lb_filas[0].rev}" if r.lb_filas else             ("en planificación" if r.decision.en_planificacion else "sin línea base")
+        lb = f"{r.lb_filas[0].tipo} rev {r.lb_filas[0].rev}" if r.lb_filas else             ("provisional (v2)" if provisional(r) else "en planificación" if r.decision.en_planificacion else "sin línea base")
         est = "" if not r.situacion.finalizado else f"  [finalizado: {r.situacion.tipo_cierre}" + (
             f", congelado al {r.situacion.corte_cierre}]" if r.situacion.congelado else "]")
         print(f"  {r.codigo:<20} JP={r.jp.username if r.jp else SIN_JP:<28} LB={lb:<22} avance prog={_f(m['avance_prog'])} real={_f(m['avance_real'])}{est}")

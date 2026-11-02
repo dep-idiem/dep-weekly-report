@@ -15,7 +15,8 @@ ADMINISTRACION = re.compile(r"^\s*0?0\s+administraci", re.I)
 
 
 def es_administracion(t: Task) -> bool:
-    """La fase "00 Administración": sus HH son el presupuesto contractual, no parte de la curva S."""
+    """La fase "00 Administración": sus HH son el presupuesto contractual, no parte de la curva S. En una lista v2
+    («00 Administración y cierre») es un cajón más: ver a_tareas_metrica y v2.py."""
     return not t.parent and bool(ADMINISTRACION.match(t.name or ""))
 
 
@@ -24,8 +25,9 @@ def hh_de(t: Task) -> float:
     return float(v) if v not in (None, "") and float(v) > 0 else 0.0
 
 
-def a_tarea_metrica(t: Task) -> TareaMetrica:
-    hh = None if es_administracion(t) else t.cf(CAMPO_HH)       # presupuesto contractual: fuera del universo
+def a_tarea_metrica(t: Task, v2: bool = False) -> TareaMetrica:
+    # presupuesto contractual: fuera del universo, salvo en listas v2 (00 Administración y cierre es un cajón)
+    hh = None if (es_administracion(t) and not v2) else t.cf(CAMPO_HH)
     return TareaMetrica(
         id=t.id, nombre=t.name, parent=t.parent,
         start=t.start_date, due=t.due_date,
@@ -36,7 +38,10 @@ def a_tarea_metrica(t: Task) -> TareaMetrica:
 
 
 def a_tareas_metrica(tareas: Iterable[Task]) -> list[TareaMetrica]:
-    return [a_tarea_metrica(t) for t in tareas]
+    from .v2 import es_v2
+    tareas = list(tareas)
+    v2 = es_v2(tareas)
+    return [a_tarea_metrica(t, v2) for t in tareas]
 
 
 def a_horas(entradas: Iterable[TimeEntry]) -> list[Horas]:

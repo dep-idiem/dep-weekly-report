@@ -133,6 +133,9 @@ def recalcular(corte: dt.date, fila: Mapping, fotos: Sequence[Mapping], lb_filas
     nueva = dict(fila)
     nueva.update({c: res.metricas.get(c) for c in RECALCULADAS})
     nueva["rev_linea_base"] = lb_filas[0].rev if lb_filas else None
+    # El programado provisional de una lista v2 (run.procesar_lista) no se guarda: el reproceso usa solo la línea
+    # base de la hoja, así que nunca deja la fila como provisional (reportes/auditoria_v2.md).
+    nueva["linea_base_provisional"] = False
     nueva["modo_calculo"] = modo.nombre
     motivo = None if lb_filas else PR.motivo_sin_linea_base(tipos_advertencia)
     nueva.update(PR.derivadas_semanales(nueva, motivo))
