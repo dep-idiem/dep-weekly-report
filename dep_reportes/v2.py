@@ -5,15 +5,13 @@ Una lista es v2 si alguna tarea de primer nivel se llama «00 Administración y 
 - los cajones son las tareas de primer nivel con HH Presupuestadas, «00 Administración y cierre» incluida: entran a
   la curva S y el presupuesto contractual es la suma de sus HH (presupuesto.hh_contrato);
 - un cajón con HH no es una «fase con HH» (estructura.clasificar);
-- la Rev. 0 se congela con lo primero entre la primera hora registrada en la lista y la primera porción creada
-  (hija directa de un cajón con responsable y time estimate); hasta entonces el programado es PROVISIONAL, con las
-  HH y fechas vigentes de los cajones (linea_base.decidir, run.procesar_lista);
+- la Rev. 0 se congela con la regla común a todas las listas desde el 2026-11-02 (linea_base.evento_congelar): lo
+  primero entre la primera hora registrada y la primera porción creada; hasta entonces el programado es PROVISIONAL;
 - avance de un cajón: cerrado = 100 %; si no, «Avance Real» manual; si no, por consumo: horas / HH con tope 90 %
   (estructura.avance_efectivo).
 """
 from __future__ import annotations
 
-import datetime as dt
 from typing import Sequence
 
 from dep_clickup.models import Task
@@ -35,17 +33,3 @@ def es_tarea_v2(t: Task) -> bool:
 
 def es_v2(tareas: Sequence[Task]) -> bool:
     return any(es_tarea_v2(t) for t in tareas)
-
-
-def evento_congelar(tareas: Sequence[Task], fechas_horas: Sequence[dt.date], corte: dt.date) -> str | None:
-    """Lo que dispara la Rev. 0 de una lista v2, o None si todavía no pasa: la primera hora registrada hasta el corte
-    o la primera porción (hija directa de un cajón, con responsable y time estimate)."""
-    horas = sorted(f for f in fechas_horas if f <= corte)
-    if horas:
-        return f"primera hora registrada el {horas[0]:%d-%m-%Y}"
-    nivel0 = {t.id for t in tareas if not t.parent}
-    porciones = sorted((t for t in tareas if t.parent in nivel0 and t.assignees and (t.time_estimate_ms or 0) > 0),
-                       key=lambda t: (t.date_created.timestamp() if t.date_created else float("inf"), t.name))
-    if porciones:
-        return f"primera porción creada «{porciones[0].name}»"
-    return None

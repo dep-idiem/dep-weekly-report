@@ -45,7 +45,8 @@ def test_contenido_del_mensaje():
     assert txt.startswith("Hola, Ana:") and "https://ejemplo/reporte" in txt and "28-09-2026" in txt
     # primero el proyecto sin curva S
     assert txt.index("2026.0001 · Proyecto 1") < txt.index("2026.0002 · Proyecto 2")
-    assert "Todavía no tiene curva S porque el proyecto está en planificación" in txt
+    # en_planificacion ya no tiene motivo propio (la 1.2 dejó de disparar la Rev. 0): mensaje genérico
+    assert "Todavía no tiene curva S porque el proyecto aún no tiene línea base congelada" in txt
     assert "Estado: Tiene curva S." in txt
     # repeticiones agrupadas, 8 nombres y el resto contado; nombre desde fotos_tareas
     assert "a estas 20 tareas:" in txt and "y 12 más (el detalle está en el reporte, sección Para revisar)" in txt

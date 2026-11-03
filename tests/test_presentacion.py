@@ -55,7 +55,7 @@ def test_titular_sin_linea_base():
 def test_motivo_sin_linea_base_por_prioridad():
     assert PR.motivo_sin_linea_base(["tarea_1_2_no_aplica", "hh_en_padre_y_subtarea"]).startswith("hay HH contadas dos veces")
     assert PR.motivo_sin_linea_base(["sin_tarea_1_2", "linea_base_sin_hh"]) == "no hay tareas con HH presupuestadas"
-    assert PR.motivo_sin_linea_base(["en_planificacion", "avance_sin_horas"]).startswith("el proyecto está en planificación")
+    assert PR.motivo_sin_linea_base(["en_planificacion", "avance_sin_horas"]) == PR.MOTIVO_GENERICO   # 1.2 ya no dispara
     assert PR.motivo_sin_linea_base([]) == PR.MOTIVO_GENERICO
 
 

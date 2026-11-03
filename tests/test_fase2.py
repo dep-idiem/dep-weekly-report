@@ -150,22 +150,30 @@ LISTA = ListInfo("L", "PJ-2026.9999 | X", "green", False, "F", "S", 6, due=dt.da
 AHORA = dt.datetime(2026, 9, 23, 12, tzinfo=TZ)
 
 
-def test_disparador_1_2():
-    d = LB.decidir("L", proyecto_tipo(), [], observada_antes=True, primera_corrida=False)
-    assert (d.accion, d.en_planificacion) == ("ninguna", True)
-    d = LB.decidir("L", proyecto_tipo("completado", "done"), [], observada_antes=True, primera_corrida=False)
-    assert (d.accion, d.tipo) == ("congelar", "normal")
-    d = LB.decidir("L", proyecto_tipo("completado", "done"), [], observada_antes=False, primera_corrida=True)
-    assert (d.accion, d.tipo) == ("congelar", "tardia")
-    d = LB.decidir("L", proyecto_tipo("no aplica", "done"), [], observada_antes=False, primera_corrida=True)
-    assert d.accion == "ninguna" and P.ADV_TAREA_12_NO_APLICA in {a.tipo for a in d.avisos}
+def test_la_tarea_1_2_ya_no_dispara():
+    # Regla única (2026-11-02): sin evento (hora registrada o porción) queda provisional, esté como esté la 1.2.
+    for ts in (proyecto_tipo(), proyecto_tipo("completado", "done"), proyecto_tipo("no aplica", "done"),
+               [t for t in proyecto_tipo() if t.id != "t12"]):
+        d = LB.decidir("L", ts, [], observada_antes=True, primera_corrida=False)
+        assert (d.accion, d.estado, d.avisos) == ("ninguna", LB.PROVISIONAL, ())
 
 
-def test_sin_tarea_1_2():
-    sin = [t for t in proyecto_tipo() if t.id != "t12"]
-    assert LB.decidir("L", sin, [], False, primera_corrida=True).tipo == "tardia"
-    d = LB.decidir("L", sin, [], True, primera_corrida=False)
-    assert d.accion == "ninguna" and P.ADV_SIN_TAREA_12 in {a.tipo for a in d.avisos}
+def test_evento_normal_o_tardio():
+    ev = LB.Evento("primera hora registrada el 15-09-2026", D(2026, 9, 15))
+    corte = D(2026, 9, 20)
+    d = LB.decidir("L", proyecto_tipo(), [], True, False, evento=ev, corte=corte)
+    assert (d.accion, d.tipo) == ("congelar", "normal")                       # evento en la semana del corte
+    d = LB.decidir("L", proyecto_tipo(), [], True, False, evento=ev, corte=D(2026, 9, 27))
+    assert (d.accion, d.tipo) == ("congelar", "tardia")                       # antes de la semana, lista ya observada
+    assert d.motivo == "Rev. 0 automática (tardia: primera hora registrada el 15-09-2026)"
+    d = LB.decidir("L", proyecto_tipo(), [], False, False, evento=ev, corte=D(2026, 9, 27))
+    assert d.tipo == "normal"                                                  # primera vez que se observa
+
+
+def test_linea_base_retenida():
+    ev = LB.Evento("x", D(2026, 9, 15))
+    d = LB.decidir("L", proyecto_tipo(), [], True, False, evento=ev, corte=D(2026, 9, 20), retenidas={"L": "por confirmar"})
+    assert (d.accion, d.estado, d.retenida) == ("ninguna", LB.PROVISIONAL, "por confirmar")
 
 
 def test_1_2_fuera_de_fase_01_no_cuenta():
@@ -249,7 +257,8 @@ def test_ida_y_vuelta_de_valores():
             "dias_habiles_para_entrega": 12, "delta_avance_real": 0.021, "delta_avance_prog": 0.03, "delta_desviacion_pts": -0.9,
             "delta_hh_gastadas": 41.5, "semaforo": "verde", "fecha_termino_usada": D(2026, 10, 2),
             "reprocesado_en": dt.datetime(2026, 9, 25, 15, 37, 26, tzinfo=TZ),
-            "fecha_entrega_contractual": D(2026, 10, 2), "es_extension": True, "dias_extension": 1}
+            "fecha_entrega_contractual": D(2026, 10, 2), "es_extension": True, "dias_extension": 1,
+            "entrega_texto": "02-10-2026"}
     ti = E.tipos("metricas_semanales")
     valores = [E.columnas("metricas_semanales"), [A.celda_sheets(fila[c], ti[c]) for c in E.columnas("metricas_semanales")]]
     assert A.filas_desde_valores("metricas_semanales", valores) == [fila]

@@ -80,7 +80,6 @@ MOTIVOS_SIN_LB = [
     ("linea_base_sin_hh", "no hay tareas con HH presupuestadas"),
     ("hh_en_padre_y_subtarea", "hay HH contadas dos veces; la línea base se congelará cuando se corrija"),
     ("tarea_1_2_no_aplica", "la tarea 1.2 está en No Aplica y la línea base se congela a mano"),
-    ("en_planificacion", "el proyecto está en planificación (la tarea 1.2 sigue abierta)"),
     ("sin_tarea_1_2", "no hay tarea 1.2 en la fase 01 y la línea base se congela a mano"),
 ]
 MOTIVO_GENERICO = "el proyecto aún no tiene línea base congelada"
@@ -95,7 +94,25 @@ def miles(x: float) -> str:
     return f"{x:,.0f}".replace(",", ".")
 
 
-PROVISIONAL = "Programado provisional (lista v2 aún sin línea base congelada). "
+PROVISIONAL = "Programado provisional (aún sin línea base congelada). "
+RETENIDA = "Programado provisional (línea base retenida: {motivo}). "
+SIN_TERMINO = "lista sin fecha de término"
+
+
+def entrega_texto(entrega: dt.date | None) -> str:
+    """Fecha de término del contrato (vencimiento de la lista) para mostrar; sin fecha: «lista sin fecha de término»."""
+    return fecha(entrega) if entrega else SIN_TERMINO
+
+
+def nota_congelada(lb_nuevas) -> str:
+    """Prefijo del titular en el corte en que se congela la Rev. 0 automática."""
+    base = [f for f in lb_nuevas if f.rev == 0 and f.tipo in ("normal", "tardia")]
+    if not base:
+        return ""
+    f = base[0]
+    cuando = "tardía, con el plan de hoy; " if f.tipo == "tardia" else ""
+    evento = f.motivo.split(": ", 1)[1].rstrip(")") if ": " in f.motivo else f.motivo
+    return f"Línea base Rev. 0 congelada en este corte ({cuando}{evento}). "
 CONSUMO_TODO, CONSUMO_PARCIAL = "por consumo, tope 90 %", "parte por consumo, tope 90 %"
 
 
@@ -110,10 +127,12 @@ def avance_por_consumo(origenes: Mapping[str, str]) -> str | None:
 
 def titular(tiene_linea_base: bool, avance_real: float | None, avance_prog: float | None,
             motivo: str | None = None, presupuesto: Mapping | None = None, provisional: bool = False,
-            consumo: str | None = None) -> str:
-    """provisional: el programado sale de los cajones vigentes (v2); consumo: nota de avance_por_consumo."""
+            consumo: str | None = None, retenida: str | None = None) -> str:
+    """provisional: el programado sale de las HH y fechas vigentes; retenida: motivo de config "linea_base_retenida";
+    consumo: nota de avance_por_consumo."""
     if provisional:
-        return PROVISIONAL + titular(True, avance_real, avance_prog, motivo, presupuesto, False, consumo)
+        pre = RETENIDA.format(motivo=retenida) if retenida else PROVISIONAL
+        return pre + titular(True, avance_real, avance_prog, motivo, presupuesto, False, consumo)
     if not tiene_linea_base:
         p = presupuesto or {}
         if p.get("hh_contrato") and p.get("pct_contrato_usado") is not None:
@@ -137,8 +156,10 @@ def titular(tiene_linea_base: bool, avance_real: float | None, avance_prog: floa
     return base + f"{num(abs(d))} puntos {'bajo' if d < 0 else 'sobre'} el plan."
 
 
-def derivadas_semanales(fila: Mapping, motivo: str | None = None) -> dict:
-    """Columnas de presentacion de una fila de metricas_semanales (tambien para filas antiguas)."""
+def derivadas_semanales(fila: Mapping, motivo: str | None = None, retenida: str | None = None,
+                        prefijo: str = "") -> dict:
+    """Columnas de presentacion de una fila de metricas_semanales (tambien para filas antiguas). prefijo: nota del
+    corte en que se congela la Rev. 0 (nota_congelada)."""
     tiene = fila.get("rev_linea_base") is not None
     prov = bool(fila.get("linea_base_provisional")) and not tiene
     con_prog = tiene or prov
@@ -146,8 +167,8 @@ def derivadas_semanales(fila: Mapping, motivo: str | None = None) -> dict:
         "tiene_linea_base": tiene,
         "desviacion_pts": desviacion_pts(fila.get("avance_real"), fila.get("avance_prog")) if con_prog else None,
         "pct_presupuesto_usado": pct_presupuesto_usado(fila.get("hh_gastadas_acum"), fila.get("total_hh")) if con_prog else None,
-        "titular": titular(tiene, fila.get("avance_real"), fila.get("avance_prog"), motivo, fila, prov,
-                           fila.get("avance_por_consumo")),
+        "titular": prefijo + titular(tiene, fila.get("avance_real"), fila.get("avance_prog"), motivo, fila, prov,
+                                     fila.get("avance_por_consumo"), retenida),
     }
 
 
@@ -299,7 +320,20 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
         return f"{t} está en la línea base pero hoy está en No Aplica: evaluar una revisión de la línea base"
     if tipo == "linea_base_tardia":
         cuando = f" el {fecha(d['fecha'])}" if d.get("fecha") else ""
-        return f"Línea base congelada tarde{cuando}, cuando la tarea 1.2 ya estaba cerrada o no existía"
+        return f"Línea base congelada tarde{cuando}, con el plan de ese día (el proyecto ya había empezado)"
+    if tipo == "fechas_anteriores_al_inicio":
+        n = d.get("n")
+        inicio = f" ({fecha(d['inicio'])})" if d.get("inicio") else ""
+        return (f"{n} tarea(s) con fechas anteriores al inicio del proyecto{inicio} (heredadas de la plantilla); "
+                "limpiar" if n else "Hay tareas con fechas anteriores al inicio del proyecto (heredadas de la plantilla); limpiar")
+    if tipo == "horas_en_tarea_ss":
+        if "horas" in d:
+            return (f"{num(d['horas'])} h registradas en la tarea de la SS del proyecto (SS_REGISTRO), no en la lista PJ: "
+                    "no cuentan en la curva S; registrarlas en la tarea que corresponde")
+        return "Hay horas registradas en la tarea de la SS del proyecto: no cuentan en la curva S"
+    if tipo == "linea_base_retenida":
+        m = f": {d['motivo']}" if d.get("motivo") else ""
+        return f"Línea base retenida por Administración DEP{m}; el programado es provisional"
     if tipo == "linea_base_sin_hh":
         return "No hay tareas con HH presupuestadas: no se puede congelar la línea base"
     if tipo == "codigo_duplicado_en_clickup":

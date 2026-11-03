@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from dataclasses import replace
 from typing import Iterable, Mapping
 
 from dep_clickup.models import Task, TimeEntry
@@ -37,11 +38,35 @@ def a_tarea_metrica(t: Task, v2: bool = False) -> TareaMetrica:
     )
 
 
-def a_tareas_metrica(tareas: Iterable[Task]) -> list[TareaMetrica]:
+def con_ancestro_con_hh(tareas: Iterable[Task], v2: bool) -> set[str]:
+    """Tareas con algún ancestro (padre, abuelo, ...) con HH Presupuestadas: sus HH no suman al presupuesto
+    (decisión de Ale del 2026-11-02; docs/definiciones_reporte.md). 00 Administración de una lista antigua no cuenta
+    como ancestro con HH (es el presupuesto contractual, fuera de la curva)."""
+    por_id = {t.id: t for t in tareas}
+    cuenta = lambda t: hh_de(t) > 0 and not (es_administracion(t) and not v2)
+    out = set()
+    for t in por_id.values():
+        p, vistos = t.parent, set()
+        while p in por_id and p not in vistos:
+            vistos.add(p)
+            if cuenta(por_id[p]):
+                out.add(t.id)
+                break
+            p = por_id[p].parent
+    return out
+
+
+def a_tareas_metrica(tareas: Iterable[Task], solo_superiores: bool = True) -> list[TareaMetrica]:
+    """solo_superiores: las HH de una tarea con un ancestro con HH quedan vacías (no suman). False: las HH tal cual
+    están en ClickUp (detector de calidad, que avisa el doble conteo)."""
     from .v2 import es_v2
     tareas = list(tareas)
     v2 = es_v2(tareas)
-    return [a_tarea_metrica(t, v2) for t in tareas]
+    tm = [a_tarea_metrica(t, v2) for t in tareas]
+    if not solo_superiores:
+        return tm
+    debajo = con_ancestro_con_hh(tareas, v2)
+    return [replace(x, hh=None) if x.id in debajo else x for x in tm]
 
 
 def a_horas(entradas: Iterable[TimeEntry]) -> list[Horas]:

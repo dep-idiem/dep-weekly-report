@@ -22,6 +22,8 @@ SIN_FASE = "(sin fase)"
 
 # Tipos de advertencia de esta fase (las del detector de la fase 1 estan en calidad.py)
 ADV_SIN_JP = "sin_jp"
+# en_planificacion, sin_tarea_1_2, tarea_1_2_no_aplica y varias_tareas_1_2 ya no se emiten (la tarea 1.2 dejó de disparar
+# la Rev. 0 el 2026-11-02); se conservan para las filas de cortes anteriores.
 ADV_EN_PLANIFICACION = "en_planificacion"
 ADV_SIN_TAREA_12 = "sin_tarea_1_2"
 ADV_TAREA_12_NO_APLICA = "tarea_1_2_no_aplica"
@@ -51,6 +53,10 @@ ADV_PAQUETE_DESAPARECIDO = "paquete_desaparecido"
 ADV_FASE_CON_HH = "fase_con_hh"
 ADV_PROYECTO_FINALIZADO = "proyecto_finalizado"     # la lista esta en Proyectos Finalizados (finalizados.py)
 ADV_FUERA_DE_FOLDERS = "proyecto_fuera_de_folders"  # filas en la hoja, pero la lista ya no esta en ninguno de los dos folders
+# TAREA_reportes_plan_vs_real (2026-11-02)
+ADV_FECHAS_HEREDADAS = "fechas_anteriores_al_inicio"   # due < inicio del proyecto: no cuentan como atraso
+ADV_HORAS_EN_SS = "horas_en_tarea_ss"                 # horas registradas en la tarea de la SS (SS_REGISTRO)
+ADV_LB_RETENIDA = "linea_base_retenida"               # config "linea_base_retenida": provisional hasta confirmar
 # Programas de servicio continuo (programas.py): para Administracion DEP
 ADV_PROGRAMA_COMPARTIDAS = "programa_horas_compartidas"      # nivel programa (sin lista)
 ADV_ENTREGABLE_PLANTILLA = "entregable_plantilla_sin_usar"
@@ -65,7 +71,7 @@ NIVEL_PROYECTO = {
     ADV_TERMINO_VENCIDO, ADV_SIN_TERMINO, ADV_HH_CAMBIARON, ADV_LB_SIN_HH, ADV_LB_TARDIA, ADV_CODIGO_DUPLICADO,
     ADV_NOMBRE_SIN_FORMATO, ADV_HORAS_ADMIN, ADV_FUERA_DE_PLAZO, ADV_FASE_OTRO_PROYECTO, ADV_TT_SIN_CLICKUP,
     ADV_LISTA_COMBINADA, ADV_SIN_PRESUPUESTO, ADV_PRESUPUESTO_POR_AGOTARSE, ADV_CUMPLIMIENTO, ADV_PAQUETE_DESAPARECIDO,
-    ADV_PROYECTO_FINALIZADO, ADV_FUERA_DE_FOLDERS,
+    ADV_PROYECTO_FINALIZADO, ADV_FUERA_DE_FOLDERS, ADV_FECHAS_HEREDADAS, ADV_HORAS_EN_SS, ADV_LB_RETENIDA,
     "hh_en_padre_y_subtarea",   # doble conteo (calidad.DOBLE_CONTEO)
 }
 # De nivel tarea, pero se escriben aunque la tarea no tenga HH Presupuestadas.

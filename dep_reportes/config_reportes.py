@@ -35,6 +35,18 @@ PROYECCION = parametros().get("proyeccion", "uniforme")
 # Presentacion: umbrales del semaforo (presentacion.UmbralesSemaforo) y horizonte de "vence en" de fotos_tareas
 UMBRALES_SEMAFORO = dict(parametros().get("semaforo") or {})
 HORIZONTE_VENCIMIENTOS_DIAS = int(parametros().get("horizonte_vencimientos_dias", 14))
+# Lista SS_REGISTRO (Propuestas / MAESTRO): horas registradas en la tarea de la SS de cada proyecto (columna aparte,
+# fuera de la curva S; plan_vs_real.py)
+SS_REGISTRO_LIST_ID = parametros().get("ss_registro_list_id", "901324495476")
+# Hoja aparte, de acceso restringido a los JP, con la pestaña plan_vs_real (datos por persona). Nunca «DEP - Reportes».
+# Sin id: la pestaña solo se escribe en el CSV del dry-run.
+SHEETS_PLAN_VS_REAL_ID = os.getenv("SHEETS_PLAN_VS_REAL_ID", "")
+
+
+def lineas_base_retenidas() -> dict[str, str]:
+    """config/reportes.json "linea_base_retenida": list_id -> motivo. Esas listas no congelan la Rev. 0 (quedan con
+    programado provisional) hasta que se saquen de la lista."""
+    return {str(k): str(v) for k, v in (parametros().get("linea_base_retenida") or {}).items()}
 
 
 def presupuestos() -> dict[str, float]:

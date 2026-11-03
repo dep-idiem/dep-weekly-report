@@ -1,6 +1,7 @@
-"""Cumplimiento del plan semanal (porciones) por proyecto y semana. Funciones puras.
+"""Cumplimiento del plan semanal por proyecto y semana. Funciones puras.
 
-Solo agregados por proyecto y semana: el detalle por persona es de la fase 5 (personas.py) y no se escribe.
+Solo agregados por proyecto y semana: el detalle por persona va a la hoja aparte (plan_vs_real.py).
+Planificado y registrado según docs/definiciones_reporte.md (regla C, desde el 2026-11-02).
 Semanas de lunes a domingo.
 """
 from __future__ import annotations
@@ -30,22 +31,36 @@ def semanas(corte: dt.date, atras: int = SEMANAS_ATRAS, adelante: int = SEMANAS_
             [l0 + dt.timedelta(weeks=k) for k in range(1, adelante + 1)])
 
 
-def filas(plan: Sequence[PorcionPlan], horas: Sequence[Horas], corte: dt.date) -> list[dict]:
-    """{semana, hh_planificadas, hh_registradas, cumplimiento}; las semanas futuras sin registradas."""
+def filas(plan: Sequence[PorcionPlan] | Mapping[dt.date, float], horas: Sequence[Horas], corte: dt.date,
+          horas_ss: Sequence[Horas] = ()) -> list[dict]:
+    """{semana, hh_planificadas, hh_registradas, cumplimiento, hh_registradas_ss}; las semanas futuras sin registradas.
+
+    plan: lunes -> horas planificadas (regla C, plan_vs_real.plan_semanal_total; docs/definiciones_reporte.md) o, por
+    compatibilidad, porciones (cada una entera en la semana de su fecha). horas_ss: horas de la tarea de la SS del
+    proyecto, aparte (no entran al cumplimiento)."""
     pasadas, futuras = semanas(corte)
     plan_s: dict[dt.date, float] = defaultdict(float)
-    for p in plan:
-        plan_s[lunes(p.fecha)] += p.horas
+    if isinstance(plan, Mapping):
+        for sem, h in plan.items():
+            plan_s[lunes(sem)] += h
+    else:
+        for p in plan:
+            plan_s[lunes(p.fecha)] += p.horas
     reg_s: dict[dt.date, float] = defaultdict(float)
     for h in horas:
         if h.fecha <= corte:
             reg_s[lunes(h.fecha)] += h.horas
+    ss_s: dict[dt.date, float] = defaultdict(float)
+    for h in horas_ss:
+        if h.fecha <= corte:
+            ss_s[lunes(h.fecha)] += h.horas
     out = []
     for s in pasadas + futuras:
         pl = plan_s.get(s, 0.0)
         reg = reg_s.get(s, 0.0) if s in pasadas else None
         out.append({"semana": s, "hh_planificadas": pl, "hh_registradas": reg,
-                    "cumplimiento": reg / pl if (reg is not None and pl) else None})
+                    "cumplimiento": reg / pl if (reg is not None and pl) else None,
+                    "hh_registradas_ss": ss_s.get(s, 0.0) if s in pasadas else None})
     return out
 
 

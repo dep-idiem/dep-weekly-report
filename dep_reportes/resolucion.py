@@ -135,7 +135,8 @@ CATALOGO: dict[str, Entrada] = {
         JP, IMPIDE, IMPIDE, lambda c, a: f"En la lista {_l(c)}, carga las HH Presupuestadas en las tareas finales "
                                          "(subtareas) del proyecto."),
     "linea_base_tardia": Entrada(
-        "La línea base se congeló después de cerrada la 1.2 (o sin 1.2), con el plan de ese día.",
+        "La línea base se congeló cuando el proyecto ya había empezado (primera hora registrada o primera porción "
+        "antes de la semana del corte), con el plan de ese día.",
         INFORMATIVA, INFORMATIVA, INFORMATIVA, _tardia),
     "no_aplica_con_hh": Entrada(
         "Una tarea en No Aplica tiene HH Presupuestadas.",
@@ -309,6 +310,22 @@ CATALOGO.update({
         lambda c, a: f"Revisa dónde quedó {_l(c)}: si sigue en curso, devuélvela a PJ Ingeniería; si terminó, a "
                      "Proyectos Finalizados. Si salió de DEP a propósito, no requiere acción.",
         prioridad=ALTA),
+    "fechas_anteriores_al_inicio": Entrada(
+        "Hay tareas con vencimiento anterior al inicio del proyecto (primera hora registrada o, si no hay, inicio de la "
+        "lista): fechas heredadas de la plantilla. No cuentan como atraso.",
+        JP, DISTORSIONA, DISTORSIONA,
+        lambda c, a: f"En la lista {_l(c)}, borra o corrige las fechas de las tareas que vencen antes del inicio del "
+                     "proyecto (están en la pestaña de tareas con su vencimiento)."),
+    "horas_en_tarea_ss": Entrada(
+        "Hay horas registradas en la tarea de la SS del proyecto (SS_REGISTRO) y no en la lista PJ: se muestran aparte y "
+        "no cuentan en la curva S.",
+        JP, DISTORSIONA, DISTORSIONA,
+        lambda c, a: "Registra las horas del proyecto en las tareas de la lista PJ; para mover las ya cargadas, pide "
+                     f"ayuda a {a}."),
+    "linea_base_retenida": Entrada(
+        "Administración DEP retuvo la línea base del proyecto (presupuesto por confirmar): el programado es provisional.",
+        ADMIN, INFORMATIVA, INFORMATIVA,
+        lambda c, a: f"{a} confirma el presupuesto y libera la línea base; se congela en la siguiente actualización."),
 })
 
 

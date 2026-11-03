@@ -6,8 +6,9 @@ Uso:
     python -m dep_reportes.run --corte 2026-09-20 --solo <list_id>
 
 El corte es un domingo (fecha de control C, inclusive). Sin --corte se usa el ultimo domingo.
-Cero escrituras en ClickUp. En Sheets no se escriben datos por persona: solo agregados por proyecto,
-fase, tarea y dia, y el nombre y correo del JP.
+Cero escrituras en ClickUp. En «DEP - Reportes» no se escriben datos por persona: solo agregados por proyecto,
+fase, tarea y dia, y el nombre y correo del JP. El plan vs real por persona (plan_vs_real.py) va a una hoja aparte
+(SHEETS_PLAN_VS_REAL_ID), de acceso restringido a los JP.
 """
 from __future__ import annotations
 
@@ -30,14 +31,14 @@ from dep_clickup.naming import list_code
 from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, presentacion as PR, proyecto as P
 from . import horas as H, personas as PERS, reproceso as REP, resolucion as RES
 from . import estructura as EST, finalizados as FIN, metricas as MT, plan_semanal as PS, presupuesto as PRES
-from . import programas as PG, v2 as V2
+from . import plan_vs_real as PVR, programas as PG, v2 as V2
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
 from .config_reportes import (DRY_RUN_DIR, FOLDER_PJ_INGENIERIA, FOLDER_PROYECTOS_FINALIZADOS, IMPORTADAS, RESPALDOS_DIR,
                               RETENCION_PRELIMINAR_DIAS, SHEETS_REPORTES_ID, TIME_ENTRIES_DESDE, TIMETRACKER_LIST_ID,
                               UMBRAL_HORAS_ADMINISTRACION, MINIMO_HORAS_ADMINISTRACION, PROYECCION,
-                              HORIZONTE_VENCIMIENTOS_DIAS, PROGRAMAS_JSON,
-                              cortes_historicos, presupuestos)
+                              HORIZONTE_VENCIMIENTOS_DIAS, PROGRAMAS_JSON, SHEETS_PLAN_VS_REAL_ID,
+                              SS_REGISTRO_LIST_ID, cortes_historicos, lineas_base_retenidas, presupuestos)
 from .metricas import Horas, TareaMetrica
 from .modos import Modo, por_nombre
 
@@ -104,6 +105,8 @@ class ResultadoLista:
     extra: dict = field(default_factory=dict)           # datos para el informe del dry-run
     situacion: FIN.Situacion = field(default_factory=FIN.Situacion)   # en curso o finalizado (finalizados.py)
     programa: str = ""                  # programa de servicio continuo (programas.py) o vacio
+    plan_vs_real: list = field(default_factory=list)    # filas por persona (hoja aparte; plan_vs_real.py)
+    heredadas: list = field(default_factory=list)       # tareas con due anterior al inicio del proyecto
 
 
 @dataclass
@@ -135,6 +138,26 @@ class Corrida:
     reproceso: REP.Reproceso | None = None                     # corte oficial ya escrito: recalculo desde fotos
     tt_historico: dict = field(default_factory=dict)           # list_id -> [(fecha, horas)] del saldo historico
     programas: dict = field(default_factory=dict)              # programa -> resumen (programas.py)
+    plan_vs_real: list = field(default_factory=list)           # filas por persona (hoja aparte)
+    filas_plan_vs_real: int | None = None                      # filas escritas en la hoja aparte
+
+
+CODIGO_SS = __import__("re").compile(r"^\s*(\d{4}\.\d{4})\b")
+
+
+def horas_ss_por_codigo(cu: ClickUpClient, team_id: str, miembros: Sequence[int], corte: dt.date) -> dict[str, list]:
+    """Entradas de tiempo de las tareas de SS_REGISTRO, por código base («2026.0225 | ...» -> 2026.0225), hasta el
+    corte. Sin cronómetros corriendo (parse_time_entry los descarta)."""
+    from dep_clickup.client import parse_time_entry
+    raw = cu.list_time_entries_raw(TIME_ENTRIES_DESDE, corte, list_id=SS_REGISTRO_LIST_ID, assignees=miembros,
+                                   team_id=team_id)
+    out: dict[str, list] = defaultdict(list)
+    for x in raw:
+        e = parse_time_entry(x)
+        m = CODIGO_SS.match(e.task_name or "") if e else None
+        if m and e.date <= corte:
+            out[m.group(1)].append(e)
+    return dict(out)
 
 
 def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros: list[Member], corte: dt.date,
@@ -143,10 +166,13 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                    comparten_codigo: Sequence[ListInfo] = (), conteo: Conteo = Conteo(),
                    umbral_admin: float = UMBRAL_HORAS_ADMINISTRACION, presupuesto_manual: float | None = None,
                    proyeccion: str = PROYECCION, situacion: FIN.Situacion = FIN.Situacion(),
-                   omitir: frozenset[str] = frozenset()) -> ResultadoLista:
+                   omitir: frozenset[str] = frozenset(), entradas_ss=(),
+                   retenidas: dict[str, str] | None = None) -> ResultadoLista:
     """situacion: en curso o finalizado. Un proyecto finalizado conserva su linea base, pero no congela una nueva
     ni agrega filas incrementales; `corte` es el de su cierre si ya estaba congelado. omitir: tipos de advertencia
-    que no aplican a la lista (programa de servicio continuo, programas.py)."""
+    que no aplican a la lista (programa de servicio continuo, programas.py). entradas_ss: entradas de tiempo de la
+    tarea de la SS del proyecto (SS_REGISTRO): columna aparte, fuera de la curva S. retenidas: list_id -> motivo
+    (config "linea_base_retenida")."""
     codigo = codigo or list_code(lista.name) or lista.id
     tm_manual = a_tareas_metrica(tareas)
     horas = a_horas(entradas_lista)
@@ -179,11 +205,16 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
             f"Responsable \"{lista.assignee_username}\" no se encontró entre los miembros"
         avisos.append(P.Aviso(P.ADV_SIN_JP, "", det, {"responsable": lista.assignee_username}))
 
-    evento_v2 = V2.evento_congelar(tareas, [h.fecha for h in horas], corte) if es_v2 else None
-    dec = LB.decidir(lista.id, tareas, lb_exist, observada_antes, primera_corrida, tuple(IMPORTADAS), evento_v2)
+    # Rev. 0: misma regla para todas las listas (linea_base.evento_congelar); antes, programado provisional.
+    evento = LB.evento_congelar(tareas, [h.fecha for h in horas], corte)
+    dec = LB.decidir(lista.id, tareas, lb_exist, observada_antes, primera_corrida, tuple(IMPORTADAS), evento, corte,
+                     retenidas)
     if situacion.finalizado:
-        dec = replace(dec, accion="ninguna")
+        # Un finalizado sin línea base no pasa a provisional (queda como estaba: sin línea base).
+        dec = replace(dec, accion="ninguna", estado="vigente" if dec.estado == "vigente" else "sin_linea_base")
     avisos += dec.avisos
+    if dec.retenida and not situacion.finalizado:
+        avisos.append(P.Aviso(P.ADV_LB_RETENIDA, "", f"Línea base retenida: {dec.retenida}", {"motivo": dec.retenida}))
     if situacion.avisar:
         avisos.append(P.Aviso(P.ADV_PROYECTO_FINALIZADO, "", f"Lista en Proyectos Finalizados ({situacion.tipo_cierre})",
                               {"tipo_cierre": situacion.tipo_cierre,
@@ -213,13 +244,11 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     if lb_filas and lb_filas[0].rev == 0 and lb_filas[0].tipo == "tardia":
         # Estable entre corridas del mismo corte: depende solo de la linea base guardada.
         avisos.append(P.Aviso(P.ADV_LB_TARDIA, "", f"Rev. 0 tardía: congelada el {lb_filas[0].fecha_captura:%Y-%m-%d} "
-                                                   "con la foto de ese día (la 1.2 ya estaba cerrada o no existía)",
+                                                   "con la foto de ese día (el proyecto ya había empezado)",
                               {"fecha": lb_filas[0].fecha_captura}))
-    if dec.en_planificacion:
-        avisos.append(P.Aviso(P.ADV_EN_PLANIFICACION, "", "Tarea 1.2 abierta: proyecto en planificación, sin línea base"))
     lb_tareas, fase_lb = LB.a_tareas(lb_filas) if lb_filas else (None, {})
     if not lb_filas and dec.estado == LB.PROVISIONAL:
-        # v2 sin Rev. 0: programado PROVISIONAL con las HH y fechas vigentes de los cajones (no se guarda).
+        # Sin Rev. 0: programado PROVISIONAL con las HH y fechas vigentes (no se guarda).
         lb_tareas = [t for t in MT.universo(tm) if not (modo.excluir_no_aplica and P.es_no_aplica(t))]
 
     fin = lista.due.date() if lista.due else None
@@ -255,7 +284,21 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     # Presupuesto contractual y plan semanal
     pres = PRES.metricas(PRES.hh_contrato(tareas, presupuesto_manual), res.metricas["hh_gastadas_acum"], al_corte, corte)
     avisos += PRES.avisos(pres, v2=es_v2)
-    filas_ps = PS.filas(plan, al_corte, corte)
+    # Plan semanal (regla C, plan_vs_real.py) y horas de la tarea de la SS, aparte.
+    horas_ss = [h for h in a_horas(entradas_ss) if h.fecha <= corte]
+    plan_p = PVR.plan_por_persona(tareas, modo.cal)
+    filas_ps = PS.filas(PVR.plan_semanal_total(plan_p), al_corte, corte, horas_ss)
+    if horas_ss:
+        avisos.append(P.Aviso(P.ADV_HORAS_EN_SS, "", f"{sum(h.horas for h in horas_ss):.1f} h en la tarea de la SS",
+                              {"horas": sum(h.horas for h in horas_ss), "n": len(horas_ss)}))
+    # Fechas heredadas de la plantilla: due anterior al inicio del proyecto (primera hora registrada o, si no hay,
+    # inicio de la lista). No cuentan como atraso (filas_de) y van a una advertencia única.
+    inicio_real = min([h.fecha for h in horas], default=None) or (lista.start.date() if lista.start else None)
+    heredadas = [t for t in tm_manual if inicio_real and t.due and t.due < inicio_real and not P.es_no_aplica(t)]
+    if heredadas:
+        avisos.append(P.Aviso(P.ADV_FECHAS_HEREDADAS, "", f"{len(heredadas)} tarea(s) con vencimiento anterior al inicio "
+                                                          f"{inicio_real}: " + ", ".join(t.nombre for t in heredadas[:5]),
+                              {"n": len(heredadas), "inicio": inicio_real, "nombres": [t.nombre for t in heredadas]}))
     avisos += PS.aviso_cumplimiento(filas_ps, corte)
     avisos += H.horas_en_administracion(tm, al_corte, umbral_admin, MINIMO_HORAS_ADMINISTRACION, v2=es_v2)
     avisos += H.horas_fuera_de_plazo(al_corte, LB.inicio_proyecto(lista, tareas), fin)
@@ -265,8 +308,10 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
 
     padres = {t.id: t.parent for t in tm}
     hpt = horas_por_tarea([h for h in horas if h.fecha <= corte], padres, acumular_en_ancestros=True)
-    # El detector evalua lo que cargo el JP (avance manual), no el avance calculado desde porciones.
-    detector = calidad.detectar(tm_manual, hpt, {t.id: t.time_estimate_h for t in tareas})
+    # El detector evalua lo que cargo el JP (avance manual y HH tal cual, para avisar el doble conteo), no el avance
+    # calculado desde porciones.
+    detector = calidad.detectar(a_tareas_metrica(tareas, solo_superiores=False), hpt,
+                                {t.id: t.time_estimate_h for t in tareas})
     # "Tarea padre con HH y subtareas sin HH" no aplica si todas las subtareas son porciones: es la estructura normal.
     normales = EST.solo_porciones_debajo(tareas, clases)
     detector = [a for a in detector if not (a.tipo == calidad.HH_EN_PADRE and a.tarea_id in normales)]
@@ -284,9 +329,19 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                              RES.Contexto(a.tarea, etiqueta, tiene_lb, a.datos)) for a in detector]
     adv = [a for a in adv if a["tipo"] not in omitir]
     con_hh = {t.id for t in tm if t.hh} | {f.task_id for f in lb_filas}
-    return ResultadoLista(lista, codigo, jp, tareas, tm, horas, dec, lb_filas, nuevas, res,
-                          P.para_hoja(adv, con_hh), adv, clases, {k: o for k, (_, o) in av.items()}, pres, filas_ps,
-                          extra, situacion)
+    # Plan vs real por persona (hoja aparte). Horas necesarias: tareas del universo (HH sin ancestro con HH) con fecha
+    # de término, menos lo gastado en ellas y sus descendientes.
+    por_id = {t.id: t for t in tareas}
+    cajones = [PVR.Cajon(t.id, t.hh, t.due, hpt.get(t.id, 0.0), por_id[t.id].cerrada)
+               for t in MT.universo(tm) if not P.es_no_aplica(t)]
+    regs = PVR.registros(entradas_lista, PVR.ORIGEN_PJ) + PVR.registros(entradas_ss, PVR.ORIGEN_SS)
+    pvr = PVR.filas(corte, "", lista.id, codigo.removeprefix("PJ-"), nombre_corto, jp.username if jp else SIN_JP,
+                    plan_p, regs, PVR.necesarias_por_semana(cajones, corte))
+    r = ResultadoLista(lista, codigo, jp, tareas, tm, horas, dec, lb_filas, nuevas, res,
+                       P.para_hoja(adv, con_hh), adv, clases, {k: o for k, (_, o) in av.items()}, pres, filas_ps,
+                       extra, situacion)
+    r.plan_vs_real, r.heredadas = pvr, [t.id for t in heredadas]
+    return r
 
 
 def fila_advertencia(corte: dt.date, list_id: str, tipo: str, task_id: str, detalle: str, ctx: RES.Contexto) -> dict:
@@ -393,9 +448,12 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
     mt = r.resultado.metricas
     idn = identificacion(r)
     vigente = r.lista.due.date() if r.lista.due else None
-    contractual = next((f.fecha_entrega_contractual for f in r.lb_filas if f.fecha_entrega_contractual), None)
+    # Entrega contractual: la guardada en la línea base (vencimiento de la lista al congelar) o, sin línea base, el
+    # vencimiento de la lista (convención DEP: inicio y término del contrato son las fechas de la lista).
+    contractual = next((f.fecha_entrega_contractual for f in r.lb_filas if f.fecha_entrega_contractual), None) or vigente
     es_ext, dias_ext = PR.extension_plazo(contractual, vigente, modo.cal)
-    plazo = {"fecha_entrega_contractual": contractual, "es_extension": es_ext, "dias_extension": dias_ext}
+    plazo = {"fecha_entrega_contractual": contractual, "es_extension": es_ext, "dias_extension": dias_ext,
+             "entrega_texto": PR.entrega_texto(vigente)}
     out: dict[str, list[dict]] = defaultdict(list)
     out["proyectos"].append({
         "list_id": lid, "nombre": r.lista.name, **idn,
@@ -433,7 +491,8 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
                "dias_habiles_para_entrega": PR.dias_habiles_para_entrega(
                    corte, r.lista.due.date() if r.lista.due else None, modo.cal), **plazo}
     motivo = None if (r.lb_filas or prov) else PR.motivo_sin_linea_base(a["tipo"] for a in r.advertencias_todas)
-    out["metricas_semanales"].append(semanal | PR.derivadas_semanales(semanal, motivo))
+    out["metricas_semanales"].append(semanal | PR.derivadas_semanales(semanal, motivo, r.decision.retenida,
+                                                                      PR.nota_congelada(r.lb_nuevas)))
     out["metricas_fase"] += [{**tc, "list_id": lid, **idn, **f} for f in r.resultado.fases]
     fases = P.fases_por_tarea(r.tm)
     propias: dict[str, float] = defaultdict(float)
@@ -442,7 +501,9 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
             propias[h.tarea_id] += h.horas
     fotos = tipo_corte == E.OFICIAL          # historial semanal: solo corridas oficiales
     por_id = {t.id: t for t in r.tareas}
-    pendiente = lambda t: not (P.es_no_aplica(t) or (t.id in por_id and por_id[t.id].cerrada))
+    # Una tarea con fecha heredada de la plantilla (due anterior al inicio del proyecto) no cuenta como atraso.
+    heredada = set(r.heredadas)
+    pendiente = lambda t: not (P.es_no_aplica(t) or (t.id in por_id and por_id[t.id].cerrada) or t.id in heredada)
     out["fotos_tareas"] += [] if not fotos else [{"corte": corte, "list_id": lid, "task_id": t.id, "parent_id": t.parent or "",
                              "task_nombre": t.nombre, "fase": fases[t.id], "estado": t.estado or "", "hh": t.hh,
                              "start": t.start, "due": t.due, "avance_real": t.avance,
@@ -471,7 +532,7 @@ def _serie(r: ResultadoLista, tc: dict, idn: dict) -> list[dict]:
 
 
 def provisional(r: ResultadoLista) -> bool:
-    """Lista v2 sin Rev. 0: el programado sale de los cajones vigentes y se marca provisional en la hoja."""
+    """Lista sin Rev. 0: el programado sale de las HH y fechas vigentes y se marca provisional en la hoja."""
     return not r.lb_filas and r.decision.estado == LB.PROVISIONAL
 
 
@@ -536,6 +597,9 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
     nativas_lista = defaultdict(list)
     for e in dep.nativas:
         nativas_lista[e.list_id].append(e)
+    # Horas registradas en las tareas de SS_REGISTRO, por código de proyecto (columna aparte, fuera de la curva S).
+    ss_por_codigo = horas_ss_por_codigo(cu, team_id, [x.id for x in miembros], corte) if SS_REGISTRO_LIST_ID else {}
+    retenidas = lineas_base_retenidas()
     tt = H.leer_timetracker(cu, TIMETRACKER_LIST_ID) if TIMETRACKER_LIST_ID else []
     tt_por_codigo = defaultdict(list)
     for reg in tt:
@@ -579,10 +643,16 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
                            lb_exist, lista.id in observadas, corrida.primera_corrida, ahora,
                            asig.codigos[lista.id], comparten.get(lista.id, ()), conteo,
                            presupuesto_manual=presupuestos_manuales.get(asig.codigos[lista.id]),
-                           situacion=sit, omitir=prog.advertencias_omitidas if prog else frozenset())
+                           situacion=sit, omitir=prog.advertencias_omitidas if prog else frozenset(),
+                           entradas_ss=[e for e in ss_por_codigo.get(base, []) if e.date <= corte_l]
+                           if base and unica else [], retenidas=retenidas)
         r.programa = prog.id if prog else ""
         corrida.listas.append(r)
     corrida.segundos_clickup = time.monotonic() - t0
+    for r in corrida.listas:
+        for f in r.plan_vs_real:
+            f["tipo_corte"] = tipo_corte
+    corrida.plan_vs_real = [f for r in corrida.listas if r.situacion.emite_semanales for f in r.plan_vs_real]
     corrida.peticiones_clickup = dict(cu.request_log)
 
     nuevas: dict[str, list[dict]] = {t: [] for t in E.TABLAS}
@@ -644,6 +714,7 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
     if dry_run:
         dest = dir_dry_run(corte, tipo_corte)
         AlmacenCsv(dest).escribir(nuevas)
+        PVR.escribir_csv(dest / f"{PVR.PESTAÑA}.csv", PVR.fusionar([], corrida.plan_vs_real, corte, tipo_corte))
         _escribir_resumen(corrida, dest / "resumen.json")
     elif corrida.fallos:
         fila = dict(nuevas["ejecuciones"][0], resultado="control_fallido",
@@ -664,6 +735,12 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
             if problemas:
                 raise RuntimeError("Tipos no reconocidos por Sheets: " + "; ".join(problemas))
             corrida.verificacion = _verificar_lectura(sheets, corrida, existentes)
+            # Plan vs real por persona: hoja aparte de acceso restringido (nunca «DEP - Reportes»).
+            if SHEETS_PLAN_VS_REAL_ID and SHEETS_PLAN_VS_REAL_ID != SHEETS_REPORTES_ID:
+                corrida.filas_plan_vs_real = PVR.escribir_hoja(SHEETS_PLAN_VS_REAL_ID, corrida.plan_vs_real, corte,
+                                                               tipo_corte, alcance)
+            else:
+                log.warning("SHEETS_PLAN_VS_REAL_ID sin definir (o igual a la hoja de reportes): plan_vs_real no se escribe")
         except Exception as e:  # registrar el error en ejecuciones (mejor esfuerzo) y relanzar
             try:
                 fila = dict(nuevas["ejecuciones"][0], resultado="error", detalle_error=str(e)[:500])
@@ -842,7 +919,7 @@ def imprimir(c: Corrida, dry_run: bool) -> None:
           f"Sheets: {c.peticiones_sheets}")
     for r in c.listas:
         m = r.resultado.metricas
-        lb = f"{r.lb_filas[0].tipo} rev {r.lb_filas[0].rev}" if r.lb_filas else             ("provisional (v2)" if provisional(r) else "en planificación" if r.decision.en_planificacion else "sin línea base")
+        lb = f"{r.lb_filas[0].tipo} rev {r.lb_filas[0].rev}" if r.lb_filas else             (("provisional (retenida)" if r.decision.retenida else "provisional") if provisional(r) else "sin línea base")
         est = "" if not r.situacion.finalizado else f"  [finalizado: {r.situacion.tipo_cierre}" + (
             f", congelado al {r.situacion.corte_cierre}]" if r.situacion.congelado else "]")
         print(f"  {r.codigo:<20} JP={r.jp.username if r.jp else SIN_JP:<28} LB={lb:<22} avance prog={_f(m['avance_prog'])} real={_f(m['avance_real'])}{est}")

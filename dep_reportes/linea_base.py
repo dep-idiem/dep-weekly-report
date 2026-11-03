@@ -3,10 +3,12 @@
 Las filas de la linea base solo se agregan; nunca se modifican ni se borran. La revision vigente de un
 proyecto es la de numero mas alto.
 
-Disparador de la Rev. 0: la tarea "1.2 ..." de la fase "01 ..." pasa a un estado de tipo cerrado
-(grupos "done" o "closed" de ClickUp), excepto "No Aplica". En una lista v2 (v2.py) no hay tarea 1.2: la Rev. 0
-se congela con lo primero entre la primera hora registrada y la primera porción creada (v2.evento_congelar); hasta
-entonces el estado es "provisional" y el programado sale de los cajones vigentes (run.procesar_lista).
+Disparador de la Rev. 0, igual para todas las listas (antiguas y v2; TAREA_reportes_plan_vs_real, 2026-11-02): lo
+primero entre la primera hora registrada en la lista y la primera porción creada (tarea con responsable, alguna
+fecha y time estimate) (evento_congelar). Hasta entonces el estado es "provisional" y el programado sale de las HH y
+fechas vigentes (run.procesar_lista). Si el evento ocurrió antes de la semana del corte en una lista ya observada, la
+Rev. 0 es "tardia" (se congela con la foto de hoy). Una lista en config/reportes.json "linea_base_retenida" no se
+congela: queda provisional hasta que Administración DEP confirme el presupuesto. La tarea 1.2 ya no se usa.
 
 Uso (revision manual):
     python -m dep_reportes.linea_base revisar --list-id <id> --motivo "..." [--tipo tardia] [--dry-run]
@@ -25,8 +27,7 @@ from dep_clickup.models import ListInfo, Task
 from . import metricas as m
 from .adaptador_clickup import a_tareas_metrica
 from .metricas import TareaMetrica
-from .proyecto import (ADV_SIN_TAREA_12, ADV_TAREA_12_NO_APLICA, ADV_VARIAS_TAREAS_12, NO_APLICA,
-                       Aviso, es_no_aplica, fases_por_tarea)
+from .proyecto import NO_APLICA, Aviso, es_no_aplica, fases_por_tarea
 
 PROVISIONAL = "provisional"
 
@@ -149,59 +150,71 @@ def importar_excel(lista: ListInfo, tareas: Sequence[Task], ruta, contractual: d
 # --- Disparador ---------------------------------------------------------------------------------
 
 def tareas_12(tareas: Sequence[Task]) -> list[Task]:
-    """Tareas cuyo nombre empieza con "1.2" dentro de la fase "01"."""
+    """Tareas cuyo nombre empieza con "1.2" dentro de la fase "01" (ya no disparan la Rev. 0; se conserva para
+    informes)."""
     tm = a_tareas_metrica(tareas)
     fases = fases_por_tarea(tm)
     return [t for t in tareas if t.name.strip().startswith("1.2") and fases[t.id].strip().startswith("01")]
 
 
 @dataclass(frozen=True)
+class Evento:
+    texto: str
+    fecha: dt.date
+
+
+def es_porcion_plan(t: Task) -> bool:
+    """Porción en el sentido del disparador y del plan semanal: responsable, alguna fecha y time estimate."""
+    return bool(t.assignees) and (t.time_estimate_ms or 0) > 0 and bool(t.start_date or t.due_date)
+
+
+def evento_congelar(tareas: Sequence[Task], fechas_horas: Sequence[dt.date], corte: dt.date) -> Evento | None:
+    """Lo primero hasta el corte entre la primera hora registrada en la lista y la primera porción creada."""
+    cands = []
+    horas = sorted(f for f in fechas_horas if f <= corte)
+    if horas:
+        cands.append(Evento(f"primera hora registrada el {horas[0]:%d-%m-%Y}", horas[0]))
+    porciones = sorted((t for t in tareas if es_porcion_plan(t) and t.date_created and t.date_created.date() <= corte),
+                       key=lambda t: (t.date_created, t.name))
+    if porciones:
+        p = porciones[0]
+        cands.append(Evento(f"primera porción creada «{p.name}» el {p.date_created:%d-%m-%Y}", p.date_created.date()))
+    return min(cands, key=lambda e: e.fecha) if cands else None
+
+
+@dataclass(frozen=True)
 class Decision:
     accion: str          # "ninguna" | "congelar" | "importar"
     tipo: str | None     # tipo de la Rev. 0 a crear
-    estado: str          # "vigente" | "sin_linea_base"
-    en_planificacion: bool
+    estado: str          # "vigente" | "provisional"
+    en_planificacion: bool   # ya no se usa (la tarea 1.2 no dispara); siempre False
     avisos: tuple[Aviso, ...]
-    motivo: str | None = None   # texto de la Rev. 0 automática (v2: el evento que la disparó)
+    motivo: str | None = None   # texto de la Rev. 0 automática (el evento que la disparó)
+    retenida: str | None = None  # motivo de config "linea_base_retenida" (queda provisional)
 
 
 def decidir(list_id: str, tareas: Sequence[Task], existentes: Sequence[FilaLB], observada_antes: bool,
-            primera_corrida: bool, importables: Sequence[str] = (), evento_v2: str | None = None) -> Decision:
+            primera_corrida: bool, importables: Sequence[str] = (), evento: Evento | None = None,
+            corte: dt.date | None = None, retenidas: dict[str, str] | None = None) -> Decision:
     """Que hacer con la linea base de un proyecto en este corte.
 
     observada_antes: la lista ya aparecia en cortes anteriores (fotos_tareas).
-    primera_corrida: no hay ninguna ejecucion de escritura previa.
-    evento_v2: en una lista v2, lo que dispara la Rev. 0 (v2.evento_congelar) o None si todavia no pasa.
+    evento: evento_congelar de la lista (None = todavia no pasa).
+    retenidas: list_id -> motivo; la lista no se congela aunque haya evento (config "linea_base_retenida").
     """
-    from .v2 import es_v2
     if vigente(existentes, list_id):
         return Decision("ninguna", None, "vigente", False, ())
     if list_id in importables:
         return Decision("importar", "importada_excel", "vigente", False, ())
-    if es_v2(tareas):
-        if evento_v2:
-            return Decision("congelar", "normal", "vigente", False, (), f"Rev. 0 automática (v2: {evento_v2})")
+    motivo_ret = (retenidas or {}).get(list_id)
+    if motivo_ret:
+        return Decision("ninguna", None, PROVISIONAL, False, (), retenida=motivo_ret)
+    if evento is None:
         return Decision("ninguna", None, PROVISIONAL, False, ())
-    t12 = tareas_12(tareas)
-    avisos: list[Aviso] = []
-    if len(t12) > 1:
-        avisos.append(Aviso(ADV_VARIAS_TAREAS_12, t12[0].id, f"{len(t12)} tareas 1.2 en la fase 01; se usa \"{t12[0].name}\"",
-                            {"n": len(t12)}))
-    if not t12:
-        if primera_corrida:
-            avisos.append(Aviso(ADV_SIN_TAREA_12, "", "Sin tarea 1.2 en la fase 01: Rev. 0 tardía con la foto actual",
-                                {"tardia": True}))
-            return Decision("congelar", "tardia", "vigente", False, tuple(avisos))
-        avisos.append(Aviso(ADV_SIN_TAREA_12, "", "Sin tarea 1.2 en la fase 01: no se congela automáticamente"))
-        return Decision("ninguna", None, "sin_linea_base", False, tuple(avisos))
-    t = t12[0]
-    if t.status.strip().lower() == NO_APLICA:
-        avisos.append(Aviso(ADV_TAREA_12_NO_APLICA, t.id, f"\"{t.name}\" está en No Aplica: no se congela automáticamente"))
-        return Decision("ninguna", None, "sin_linea_base", False, tuple(avisos))
-    if t.cerrada:
-        # La advertencia linea_base_tardia la emite run.procesar_lista mientras la Rev. 0 tardia este vigente.
-        return Decision("congelar", "normal" if observada_antes else "tardia", "vigente", False, tuple(avisos))
-    return Decision("ninguna", None, "sin_linea_base", True, tuple(avisos))
+    # Tardía: el evento fue antes de la semana del corte y la lista ya se reportaba (se congela la foto de hoy).
+    tardia = observada_antes and corte is not None and evento.fecha <= corte - dt.timedelta(days=7)
+    tipo = "tardia" if tardia else "normal"
+    return Decision("congelar", tipo, "vigente", False, (), f"Rev. 0 automática ({tipo}: {evento.texto})")
 
 
 # --- CLI: revision manual -----------------------------------------------------------------------

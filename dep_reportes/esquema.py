@@ -34,7 +34,11 @@ METRICAS = [("total_hh", NUMERO), ("hh_prog_acum", NUMERO), ("hh_gastadas_acum",
             ("hh_estimadas_al_termino", NUMERO), ("hh_estimadas_termino_plan_semanal", NUMERO),
             ("hh_estimadas_a_entrega", NUMERO),
             ("hh_actuales_clickup", NUMERO)]
-PLAZO = [("fecha_entrega_contractual", FECHA), ("es_extension", BOOLEANO), ("dias_extension", ENTERO)]
+# fecha_entrega_contractual: la de la linea base vigente o, sin linea base, el vencimiento de la lista (convencion DEP:
+# inicio y termino del contrato son las fechas de la lista). entrega_texto: esa fecha dd-mm-aaaa o «lista sin fecha de
+# término» (presentacion.entrega_texto).
+PLAZO = [("fecha_entrega_contractual", FECHA), ("es_extension", BOOLEANO), ("dias_extension", ENTERO),
+         ("entrega_texto", TEXTO)]
 
 TABLAS: dict[str, list[tuple[str, str]]] = {
     # Plazo (presentacion.extension_plazo): entrega contractual de la linea base vigente frente al termino vigente de la
@@ -79,10 +83,12 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                     + [("tipo", TEXTO), ("nivel", TEXTO), ("task_id", TEXTO), ("detalle", TEXTO), ("mensaje", TEXTO),
                        ("como_resolver", TEXTO), ("responsable_accion", TEXTO), ("impacto", TEXTO),
                        ("prioridad", TEXTO)],
-    # Cumplimiento del plan semanal (plan_semanal.py): solo por proyecto y semana, nunca por persona.
+    # Cumplimiento del plan semanal (plan_semanal.py): solo por proyecto y semana, nunca por persona (el detalle por
+    # persona va a la hoja aparte, plan_vs_real.py). hh_registradas: lista PJ; hh_registradas_ss: tarea de la SS.
     "plan_semanal": [("corte", FECHA), ("tipo_corte", TEXTO), ("list_id", TEXTO), ("codigo", TEXTO), ("proyecto", TEXTO),
                      ("jp_nombre", TEXTO), ("jp_email", TEXTO), ("semana", FECHA), ("hh_planificadas", NUMERO),
-                     ("hh_registradas", NUMERO), ("cumplimiento", NUMERO), ("es_ultimo_corte", BOOLEANO)] + ESTADO,
+                     ("hh_registradas", NUMERO), ("cumplimiento", NUMERO), ("es_ultimo_corte", BOOLEANO)] + ESTADO
+                    + [("hh_registradas_ss", NUMERO)],
     # Cierre de los proyectos finalizados (finalizados.py): una fila por lista, solo en corridas oficiales.
     "cierres": [("list_id", TEXTO)] + IDENT
                + [("tipo_cierre", TEXTO), ("corte_cierre", FECHA), ("ultimo_corte_en_curso", FECHA),

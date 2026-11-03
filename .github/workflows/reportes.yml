@@ -78,6 +78,8 @@ jobs:
           GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
           SHEETS_REPORTES_ID: ${{ secrets.SHEETS_REPORTES_ID }}
+          # Hoja aparte, restringida a los JP, con plan_vs_real por persona (dep_reportes/plan_vs_real.py)
+          SHEETS_PLAN_VS_REAL_ID: ${{ secrets.SHEETS_PLAN_VS_REAL_ID }}
           EVENTO: ${{ github.event_name }}
           TIPO: ${{ inputs.tipo }}
           CORTE: ${{ inputs.corte }}
@@ -101,7 +103,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dry-run-${{ github.run_id }}-${{ github.run_attempt }}
-          path: reportes/dry_run/
+          # plan_vs_real.csv tiene datos por persona: no se sube como artefacto
+          path: |
+            reportes/dry_run/
+            !reportes/dry_run/**/plan_vs_real.csv
           retention-days: 7
           if-no-files-found: ignore
 
