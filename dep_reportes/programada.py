@@ -6,7 +6,10 @@ puras.
 - Presupuesto: HH Presupuestadas de las tareas sin ningún ancestro con HH (adaptador_clickup.a_tareas_metrica).
 - Programada: cada tarea del presupuesto reparte sus HH por día hábil entre su inicio y su término. Si le falta una
   fecha, las fechas están al revés, no tiene días hábiles o alguna cae fuera de [inicio, término] de la lista, sus HH
-  se reparten entre el inicio y el término de la lista (respaldo).
+  se reparten entre el inicio y el término de la lista (respaldo). Excepción (Ale, 2026-11-03): un inicio anterior al
+  de la lista por MAX_DIAS_ANTICIPO días o menos no va al respaldo; la tarea usa sus fechas, la ventana de la
+  programada parte en ese inicio y queda la advertencia informativa inicio_anterior_contractual. El término de la
+  lista sigue siendo límite estricto.
 - programada_modo: `tareas` (ninguna cayó al respaldo), `mixta` (algunas) o `lineal` (todas: la curva es una recta
   entre inicio y término de la lista).
 - estado_curva del proyecto: `ok`, `sin_presupuesto` (presupuesto 0: sin programada ni línea base),
@@ -17,7 +20,7 @@ puras.
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Sequence
 
 from .calendario import Calendario
@@ -27,6 +30,7 @@ TAREAS, MIXTA, LINEAL = "tareas", "mixta", "lineal"
 OK, SIN_PRESUPUESTO, INCOHERENTE, RETENIDA, RECURRENTE = (
     "ok", "sin_presupuesto", "presupuesto_incoherente", "retenida", "recurrente")
 TOL_HORAS = 0.01
+MAX_DIAS_ANTICIPO = 30      # inicio anterior al de la lista tolerado sin respaldo (días corridos)
 
 
 @dataclass(frozen=True)
@@ -41,12 +45,28 @@ class Respaldo:
 
 
 @dataclass(frozen=True)
+class Anticipada:
+    """Tarea que empieza antes del inicio de la lista (hasta MAX_DIAS_ANTICIPO días) y se reparte con sus fechas."""
+    task_id: str
+    nombre: str
+    hh: float
+    start: dt.date
+    dias: int                           # días corridos entre su inicio y el inicio de la lista
+
+
+@dataclass(frozen=True)
 class Programada:
     tareas: list[TareaMetrica]          # tareas del presupuesto con las fechas con que se reparten
     modo: str | None                    # tareas / mixta / lineal; None sin presupuesto
     respaldo: list[Respaldo]
     inicio: dt.date | None              # rango de la lista con que se validó
     termino: dt.date | None
+    anticipadas: list[Anticipada] = field(default_factory=list)
+
+    @property
+    def inicio_ventana(self) -> dt.date | None:
+        """Inicio de la ventana de la programada: el de la lista o el inicio anticipado más temprano."""
+        return min([a.start for a in self.anticipadas] + ([self.inicio] if self.inicio else []), default=None)
 
     @property
     def presupuesto(self) -> float:
@@ -67,17 +87,21 @@ def motivo_respaldo(t: TareaMetrica, inicio: dt.date | None, termino: dt.date | 
         return "sin fecha de término"
     if t.start > t.due:
         return f"inicio {_f(t.start)} posterior al término {_f(t.due)}"
-    if inicio and t.start < inicio:
-        return f"inicio {_f(t.start)} anterior al inicio de la lista {_f(inicio)}"
+    if inicio and t.start < inicio and dias_anticipo(t, inicio) > MAX_DIAS_ANTICIPO:
+        return f"inicio {_f(t.start)} anterior al inicio de la lista {_f(inicio)} ({dias_anticipo(t, inicio)} días)"
     if termino and t.due > termino:
         return f"término {_f(t.due)} posterior al término de la lista {_f(termino)}"
     if inicio and t.start > (termino or t.start):
         return f"inicio {_f(t.start)} posterior al término de la lista {_f(termino)}"
-    if termino and t.due < (inicio or t.due):
-        return f"término {_f(t.due)} anterior al inicio de la lista {_f(inicio)}"
+    # Un término anterior al inicio de la lista implica un inicio aún anterior: lo resuelve la regla del inicio.
     if cal.networkdays(t.start, t.due) <= 0:
         return f"sin días hábiles entre {_f(t.start)} y {_f(t.due)}"
     return None
+
+
+def dias_anticipo(t: TareaMetrica, inicio: dt.date | None) -> int:
+    """Días corridos que la tarea empieza antes del inicio de la lista (0 si no empieza antes)."""
+    return (inicio - t.start).days if inicio and t.start and t.start < inicio else 0
 
 
 def programar(universo: Sequence[TareaMetrica], inicio: dt.date | None, termino: dt.date | None,
@@ -105,7 +129,9 @@ def programar(universo: Sequence[TareaMetrica], inicio: dt.date | None, termino:
         respaldo.append(Respaldo(t.id, t.nombre, float(t.hh), t.start, t.due, m))
         out.append(replace(t, start=a, due=b) if rango_ok else replace(t, start=None, due=None))
     modo = TAREAS if not respaldo else LINEAL if len(respaldo) == len(tareas) else MIXTA
-    return Programada(out, modo, respaldo, inicio, termino)
+    anticipadas = [Anticipada(t.id, t.nombre, float(t.hh), t.start, dias_anticipo(t, inicio))
+                   for t in tareas if motivos[t.id] is None and dias_anticipo(t, inicio) > 0]
+    return Programada(out, modo, respaldo, inicio, termino, anticipadas)
 
 
 def estado(presupuesto: float, gastadas: float, tiene_linea_base: bool, retenida: bool, recurrente: bool) -> str:

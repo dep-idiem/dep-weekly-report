@@ -15,7 +15,7 @@ from .config_reportes import parametros
 JP, INFORMATIVA = "JP", "Informativa"
 IMPIDE, DISTORSIONA = "Impide la curva S", "Distorsiona las cifras"
 IMPIDE_PRESUPUESTO = "Impide el control de presupuesto"
-ALTA, NORMAL = "alta", "normal"
+ALTA, NORMAL, BAJA = "alta", "normal", "baja"
 MAX_NOMBRE = 45                   # nombres de tarea o lista mas largos se recortan con …
 
 
@@ -339,6 +339,12 @@ CATALOGO.update({
         lambda c, a: f"En la lista {_l(c)}, completa las HH Presupuestadas del proyecto; la línea base se congela en "
                      "la siguiente actualización.",
         prioridad=ALTA),
+    "inicio_anterior_contractual": Entrada(
+        "Una tarea con HH Presupuestadas empieza hasta 30 días antes del inicio de la lista: sus HH se reparten con sus "
+        "propias fechas y la curva programada parte en ese inicio (más de 30 días: fechas_fuera_de_lista).",
+        INFORMATIVA, INFORMATIVA, INFORMATIVA,
+        lambda c, a: f"Si {_t(c)} no empezó antes del contrato, corrige su fecha de inicio en ClickUp.",
+        prioridad=BAJA),
     "fechas_fuera_de_lista": Entrada(
         "Una tarea con HH Presupuestadas no tiene fechas, las tiene al revés o caen fuera del inicio y término de la "
         "lista: sus HH se reparten en todo el plazo de la lista.",

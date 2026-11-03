@@ -40,7 +40,8 @@ def test_respaldo_al_plazo_de_la_lista_por_cada_motivo():
         "sin fecha de inicio": tm("b", 8, None, D(2026, 10, 9)),
         "sin fecha de término": tm("c", 8, D(2026, 10, 9), None),
         "inicio 20-10-2026 posterior al término 10-10-2026": tm("d", 8, D(2026, 10, 20), D(2026, 10, 10)),
-        "inicio 01-08-2026 anterior al inicio de la lista 05-10-2026": tm("e", 8, D(2026, 8, 1), D(2026, 10, 9)),
+        "inicio 01-08-2026 anterior al inicio de la lista 05-10-2026 (65 días)": tm("e", 8, D(2026, 8, 1), D(2026, 10, 9)),
+        "inicio 04-09-2026 anterior al inicio de la lista 05-10-2026 (31 días)": tm("e31", 8, D(2026, 9, 4), D(2026, 10, 9)),
         "término 15-12-2026 posterior al término de la lista 27-11-2026": tm("f", 8, D(2026, 10, 9), D(2026, 12, 15)),
         "sin días hábiles entre 10-10-2026 y 11-10-2026": tm("g", 8, D(2026, 10, 10), D(2026, 10, 11)),   # sáb-dom
     }
@@ -50,6 +51,33 @@ def test_respaldo_al_plazo_de_la_lista_por_cada_motivo():
     por_id = {t.id: t for t in p.tareas}
     assert all((por_id[t.id].start, por_id[t.id].due) == (ini, fin) for t in casos.values())
     assert (por_id["ok"].start, por_id["ok"].due) == (D(2026, 10, 5), D(2026, 10, 9))
+
+
+def test_inicio_hasta_30_dias_antes_de_la_lista_usa_sus_fechas():
+    ini, fin = D(2026, 10, 26), D(2026, 12, 3)
+    p = PROG.programar([tm("a", 79, D(2026, 10, 15), D(2026, 11, 26)),        # 11 días antes
+                        tm("b", 23, D(2026, 9, 26), D(2026, 10, 16)),          # 30 días: límite, y termina antes
+                        tm("c", 10, D(2026, 9, 25), D(2026, 10, 30)),          # 31 días: respaldo
+                        tm("d", 5, D(2026, 10, 20), D(2026, 12, 4))], ini, fin, SIN_FERIADOS)   # término: estricto
+    assert {x.task_id for x in p.respaldo} == {"c", "d"} and p.modo == PROG.MIXTA
+    assert [(x.task_id, x.dias) for x in p.anticipadas] == [("a", 11), ("b", 30)]
+    por_id = {t.id: t for t in p.tareas}
+    assert (por_id["a"].start, por_id["a"].due) == (D(2026, 10, 15), D(2026, 11, 26))
+    assert (por_id["b"].start, por_id["b"].due) == (D(2026, 9, 26), D(2026, 10, 16))
+    assert p.inicio_ventana == D(2026, 9, 26) and p.inicio == ini
+    # «d» empieza antes, pero cae al respaldo por el término: no es anticipada
+    assert PROG.programar([tm("d", 5, D(2026, 10, 20), D(2026, 12, 4))], ini, fin, SIN_FERIADOS).anticipadas == []
+
+
+def test_advertencia_informativa_de_inicio_anterior():
+    ts = [_t("f", "05 Ingeniería"), _t("a", "5.1 Revisión", "f", hh=20, s=D(2026, 9, 28), d=D(2026, 10, 16))]
+    r = _procesar(ts)
+    assert r.programada.modo == PROG.TAREAS and r.programada.respaldo == []
+    adv = [a for a in r.advertencias if a["tipo"] == "inicio_anterior_contractual"]
+    assert len(adv) == 1 and adv[0]["prioridad"] == "baja" and adv[0]["responsable_accion"] == "Informativa"
+    assert adv[0]["mensaje"].startswith("«5.1 Revisión» empieza 7 días antes del inicio de la lista (05-10-2026)")
+    assert not [a for a in r.advertencias if a["tipo"] == "fechas_fuera_de_lista"]
+    assert r.resultado.serie[0].fecha == D(2026, 9, 28)                     # la ventana parte en ese inicio
 
 
 def test_todas_al_respaldo_es_lineal_entre_inicio_y_termino_de_la_lista():

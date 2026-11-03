@@ -356,6 +356,11 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
             return (f"Las horas registradas ({num(d['gastadas'])} h) superan el presupuesto ({num(d['presupuesto'])} HH): "
                     "la línea base no se congela hasta corregir las HH Presupuestadas")
         return "Las horas registradas superan el presupuesto: la línea base no se congela hasta corregirlo"
+    if tipo == "inicio_anterior_contractual":
+        if d.get("dias") is not None and d.get("inicio_lista"):
+            return (f"{t} empieza {d['dias']} días antes del inicio de la lista ({fecha(d['inicio_lista'])}): sus HH se "
+                    "reparten con sus propias fechas")
+        return f"{t} empieza antes del inicio de la lista: sus HH se reparten con sus propias fechas"
     if tipo == "fechas_fuera_de_lista":
         if d.get("motivo"):
             return (f"{t} ({d['motivo']}): sus HH se reparten entre el inicio y el término de la lista; corregir sus "

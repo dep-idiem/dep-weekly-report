@@ -61,6 +61,7 @@ ADV_LB_RETENIDA = "linea_base_retenida"               # config "linea_base_reten
 ADV_PROYECTO_SIN_PRESUPUESTO = "proyecto_sin_presupuesto"   # ninguna tarea con HH: sin programada ni línea base
 ADV_PRESUPUESTO_INCOHERENTE = "presupuesto_incoherente"     # horas registradas > presupuesto antes de la Rev. 0
 ADV_FECHAS_FUERA_DE_LISTA = "fechas_fuera_de_lista"         # tarea del presupuesto repartida en el plazo de la lista
+ADV_INICIO_ANTERIOR = "inicio_anterior_contractual"         # inicio hasta 30 días antes de la lista: usa sus fechas
 # Programas de servicio continuo (programas.py): para Administracion DEP
 ADV_PROGRAMA_COMPARTIDAS = "programa_horas_compartidas"      # nivel programa (sin lista)
 ADV_ENTREGABLE_PLANTILLA = "entregable_plantilla_sin_usar"

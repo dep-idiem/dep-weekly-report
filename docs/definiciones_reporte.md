@@ -24,7 +24,14 @@ hábil entre su `start_date` y su `due_date`, y se acumula. Respaldo: si la tare
 fechas están al revés, el rango no tiene días hábiles o alguna fecha cae fuera de [inicio, término] de la lista, sus
 HH se reparten entre el inicio y el término de la lista, y queda la advertencia `fechas_fuera_de_lista` (nivel tarea,
 para el JP, con el motivo). Si la lista no tiene inicio o término, el respaldo usa el inicio más temprano o el término
-más tardío de las tareas con fechas propias. Columna `programada_modo` (en `proyectos` y `metricas_semanales`):
+más tardío de las tareas con fechas propias.
+
+**Inicio anterior al de la lista (hasta 30 días).** Una tarea cuyo inicio es anterior al inicio de la lista por **30
+días corridos o menos** no va al respaldo: sus HH se reparten entre sus propias fechas y la ventana de la programada
+(la curva) parte en ese inicio (`programada.MAX_DIAS_ANTICIPO`, `Programada.inicio_ventana`). Queda la advertencia
+informativa `inicio_anterior_contractual` (nivel tarea, prioridad baja) con los días. Con más de 30 días sigue el
+tratamiento de arriba (respaldo y `fechas_fuera_de_lista`). El **término** de la lista sigue siendo límite estricto: una
+tarea que termina después va al respaldo aunque empiece dentro del margen. Columna `programada_modo` (en `proyectos` y `metricas_semanales`):
 
 | programada_modo | significado |
 |---|---|

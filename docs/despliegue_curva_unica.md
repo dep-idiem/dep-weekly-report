@@ -46,3 +46,9 @@ respaldo.
   (1400570000002107).
 - `config/programas.json`: programas AITO-HPC y AITO-SOTERO (contrato único cada uno, líneas Servicio y Cartas, sin
   entregables ni presupuesto todavía).
+
+## Cambio del 2026-11-03 (tarde): inicio anterior al de la lista
+
+Una tarea que empieza hasta 30 días antes del inicio de la lista ya no va al respaldo: usa sus fechas y deja la
+advertencia `inicio_anterior_contractual` (informativa, prioridad «baja», valor nuevo en `advertencias.prioridad`). No
+cambian columnas. Cifras nuevas en `reportes/curva_unica/`.

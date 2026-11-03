@@ -6,7 +6,7 @@ programada que tendrían las listas de los programas de servicio continuo (lee C
 
 Uso:
     python scripts/comparar_curva_unica.py --antes reportes/dry_run/2026-11-03_preliminar_antes \
-        --despues reportes/dry_run/2026-11-03_preliminar [--recurrentes]
+        --despues reportes/dry_run/2026-11-03_preliminar [--recurrentes] [--titulo "..."]
 """
 from __future__ import annotations
 
@@ -56,6 +56,7 @@ def main() -> int:
     ap.add_argument("--despues", type=Path, required=True)
     ap.add_argument("--salida", type=Path, default=ROOT / "reportes" / "curva_unica")
     ap.add_argument("--recurrentes", action="store_true")
+    ap.add_argument("--titulo", default="Curva programada única: dry-run del corte preliminar del 03-11-2026")
     a = ap.parse_args()
 
     pa = {p["list_id"]: p for p in leer(a.antes, "proyectos")}
@@ -68,7 +69,7 @@ def main() -> int:
     activos = sorted((p for p in pd.values() if p["estado_proyecto"] == "en_curso" and p["list_id"] not in PRUEBA),
                      key=lambda p: p["codigo"])
 
-    filas, respaldo = [], []
+    filas, respaldo, anticipadas = [], [], []
     for p in activos:
         lid, cod = p["list_id"], p["codigo"]
         d, an, ant = md.get(lid, {}), ma.get(lid, {}), pa.get(lid, {})
@@ -77,6 +78,8 @@ def main() -> int:
         lb_a, lb_d = lb_txt(ant, an, nuevas_a), lb_txt(p, d, nuevas_d)
         if lb_a != lb_d:
             cambios.append(f"línea base: {lb_a} → {lb_d}")
+        if (ant.get("programada_modo") or "") != (p.get("programada_modo") or "") and "programada_modo" in ant:
+            cambios.append(f"programada_modo {ant.get('programada_modo') or '—'} → {p.get('programada_modo') or '—'}")
         if (an.get("hh_prog_acum") or "") != (d.get("hh_prog_acum") or ""):
             cambios.append(f"HH prog. al corte {num(an.get('hh_prog_acum'))} → {num(d.get('hh_prog_acum'))}")
         if (an.get("avance_prog") or "") != (d.get("avance_prog") or ""):
@@ -89,12 +92,14 @@ def main() -> int:
                       "; ".join(cambios) or "sin cambios"])
         for x in r.get("respaldo", []):
             respaldo.append((p["jp_nombre"], cod, p["nombre_corto"], x))
+        for x in r.get("anticipadas", []):
+            anticipadas.append((p["jp_nombre"], cod, p["nombre_corto"], x))
 
     a.salida.mkdir(parents=True, exist_ok=True)
     enc = ["Proyecto", "Nombre", "Inicio lista", "Término lista", "Presupuesto (HH)", "programada_modo",
            "Horas registradas", "Estado", "Qué cambia respecto del reporte actual"]
-    lineas = ["# Curva programada única: dry-run del corte preliminar del 03-11-2026", "",
-              f"Antes: `{a.antes.name}` (código local 643595e). Después: `{a.despues.name}` (código nuevo). "
+    lineas = [f"# {a.titulo}", "",
+              f"Antes: `{a.antes.name}`. Después: `{a.despues.name}`. "
               f"{len(activos)} listas activas (sin PJ-TEST ni PJ-EJEMPLO). Sin escrituras en Sheets.", "",
               "| " + " | ".join(enc) + " |", "|" + "---|" * len(enc)]
     lineas += ["| " + " | ".join(str(c) for c in f) + " |" for f in filas]
@@ -108,10 +113,18 @@ def main() -> int:
         out += [f"| {cod} · {nom[:35]} | {x['nombre']} | {num(x['hh'], 1)} | {fecha(x['start'])} | {fecha(x['due'])} | "
                 f"{x['motivo']} |" for j, cod, nom, x in respaldo if j == jp]
         out.append("")
+    if anticipadas:
+        out += ["## Informativo: tareas que empiezan hasta 30 días antes del inicio de la lista (usan sus fechas)", "",
+                "Advertencia `inicio_anterior_contractual` (prioridad baja). No van al respaldo.", "",
+                "| JP | Proyecto | Tarea | HH | Inicio | Días antes |", "|---|---|---|---|---|---|"]
+        out += [f"| {j} | {cod} · {nom[:35]} | {x['nombre']} | {num(x['hh'], 1)} | {fecha(x['start'])} | {x['dias']} |"
+                for j, cod, nom, x in anticipadas]
+        out.append("")
     if a.recurrentes:
         out += recurrentes(pd)
     (a.salida / "respaldo_por_jp.md").write_text("\n".join(out) + "\n", encoding="utf-8")
-    print(f"Escrito {a.salida}: {len(filas)} proyectos, {len(respaldo)} tareas al respaldo")
+    print(f"Escrito {a.salida}: {len(filas)} proyectos, {len(respaldo)} tareas al respaldo, "
+          f"{len(anticipadas)} con inicio anticipado")
     return 0
 
 

@@ -273,6 +273,9 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     for x in progr.respaldo if progr else []:
         avisos.append(P.Aviso(P.ADV_FECHAS_FUERA_DE_LISTA, x.task_id, f"\"{x.nombre}\" ({x.motivo})",
                               {"motivo": x.motivo, "hh": x.hh}))
+    for x in progr.anticipadas if progr else []:
+        avisos.append(P.Aviso(P.ADV_INICIO_ANTERIOR, x.task_id, f"\"{x.nombre}\" empieza {x.dias} días antes de la lista",
+                              {"dias": x.dias, "inicio": x.start, "inicio_lista": progr.inicio}))
 
     fin = lista.due.date() if lista.due else None
     plan = EST.plan_porciones(tareas, clases)
@@ -883,6 +886,9 @@ def _escribir_resumen(c: Corrida, ruta) -> None:
             "presupuesto_hh": r.programada.presupuesto if r.programada else None,
             "respaldo": [{"task_id": x.task_id, "nombre": x.nombre, "hh": x.hh, "start": x.start, "due": x.due,
                           "motivo": x.motivo} for x in (r.programada.respaldo if r.programada else [])],
+            "anticipadas": [{"task_id": x.task_id, "nombre": x.nombre, "hh": x.hh, "start": x.start, "dias": x.dias}
+                            for x in (r.programada.anticipadas if r.programada else [])],
+            "inicio_ventana": r.programada.inicio_ventana if r.programada else None,
             "cumplimiento_8_semanas": PS.por_agregar({"x": r.plan_semanal})["x"],
             "presupuesto": r.presupuesto} for r in c.listas},
         "saldo_historico": {r.codigo: {"corte_historico": str(c.conteos[r.lista.id].corte_historico),
