@@ -44,7 +44,10 @@ PLAZO = [("fecha_entrega_contractual", FECHA), ("es_extension", BOOLEANO), ("dia
 CURVA = [("estado_curva", TEXTO), ("programada_modo", TEXTO)]
 # Ritmo (presupuesto.ritmo_real, presentacion.semanas_desfase), solo en proyectos: ritmo_real = horas por semana en las 2
 # ultimas semanas cerradas; semanas_desfase = HH pendientes / ritmo_real - semanas hasta el termino contractual.
-RITMO = [("ritmo_real", NUMERO), ("semanas_desfase", NUMERO)]
+# hh_pendientes = sum (1 - avance) x HH del presupuesto; horas_necesarias_semana = hh_pendientes / semanas hasta el termino
+# contractual; fecha_termino_estimada = corte + hh_pendientes / ritmo_real semanas (presentacion.py).
+RITMO = [("ritmo_real", NUMERO), ("semanas_desfase", NUMERO), ("hh_pendientes", NUMERO),
+         ("horas_necesarias_semana", NUMERO), ("fecha_termino_estimada", FECHA)]
 
 TABLAS: dict[str, list[tuple[str, str]]] = {
     # Plazo (presentacion.extension_plazo): entrega contractual de la linea base vigente frente al termino vigente de la
@@ -94,7 +97,11 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
     "plan_semanal": [("corte", FECHA), ("tipo_corte", TEXTO), ("list_id", TEXTO), ("codigo", TEXTO), ("proyecto", TEXTO),
                      ("jp_nombre", TEXTO), ("jp_email", TEXTO), ("semana", FECHA), ("hh_planificadas", NUMERO),
                      ("hh_registradas", NUMERO), ("cumplimiento", NUMERO), ("es_ultimo_corte", BOOLEANO)] + ESTADO
-                    + [("hh_registradas_ss", NUMERO)],
+                    + [("hh_registradas_ss", NUMERO)]
+                    # horas_necesarias_semana: lo pendiente de cada tarea del presupuesto repartido hasta su termino
+                    # (plan_vs_real.necesarias_por_semana, lo mismo que la fila «(proyecto)» de la hoja de los JP);
+                    # ritmo_real: el de proyectos, repetido en cada semana (para la linea de referencia en Looker).
+                    + [("horas_necesarias_semana", NUMERO), ("ritmo_real", NUMERO)],
     # Cierre de los proyectos finalizados (finalizados.py): una fila por lista, solo en corridas oficiales.
     "cierres": [("list_id", TEXTO)] + IDENT
                + [("tipo_cierre", TEXTO), ("corte_cierre", FECHA), ("ultimo_corte_en_curso", FECHA),

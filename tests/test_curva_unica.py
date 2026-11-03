@@ -249,3 +249,41 @@ def test_ritmo_y_desfase_en_proyectos():
     assert p["semanas_desfase"] == pend / 10 - habiles / 5
     sin = run.filas_de(_procesar([_t("f", "05 Ingeniería")], entradas), CORTE, DEP, AHORA)["proyectos"][0]
     assert sin["ritmo_real"] == 10 and sin["semanas_desfase"] is None    # sin presupuesto: sin desfase
+
+
+# --- horas necesarias y término estimado (proyectos y plan_semanal) ----------------------------------------------
+
+def test_horas_necesarias_semana_y_fecha_termino_estimada():
+    from dep_reportes import presentacion as PR
+    corte, fin = D(2026, 11, 1), D(2026, 11, 13)                      # 10 días hábiles = 2 semanas
+    assert PR.horas_necesarias_semana(60, corte, fin, SIN_FERIADOS) == 30
+    assert PR.horas_necesarias_semana(60, corte, D(2026, 11, 6), SIN_FERIADOS) == 60    # 5 hábiles = 1 semana
+    assert PR.horas_necesarias_semana(60, corte, D(2026, 10, 26), SIN_FERIADOS) is None  # vencido
+    assert PR.horas_necesarias_semana(60, corte, corte, SIN_FERIADOS) is None             # vence el día del corte
+    assert PR.horas_necesarias_semana(None, corte, fin, SIN_FERIADOS) is None
+    assert PR.horas_necesarias_semana(60, corte, None, SIN_FERIADOS) is None
+    assert PR.fecha_termino_estimada(60, 20, corte) == D(2026, 11, 22)                     # 3 semanas
+    assert PR.fecha_termino_estimada(0, 20, corte) == corte
+    assert PR.fecha_termino_estimada(60, 0, corte) is None
+    assert PR.fecha_termino_estimada(None, 20, corte) is None
+
+
+def test_necesarias_en_proyectos_y_plan_semanal():
+    entradas = [_e("1", "a", "Ana", D(2026, 10, 20), 8), _e("2", "a", "Ana", D(2026, 10, 27), 12)]
+    r = _procesar(_tareas(), entradas)
+    out = run.filas_de(r, CORTE, DEP, AHORA)
+    p = out["proyectos"][0]
+    habiles = DEP.cal.networkdays(D(2026, 11, 2), D(2026, 11, 27))
+    assert p["hh_pendientes"] == 50
+    assert p["horas_necesarias_semana"] == 50 / (habiles / 5)
+    assert p["fecha_termino_estimada"] == CORTE + dt.timedelta(days=35)                   # 50 h a 10 h/sem
+    ps = {f["semana"]: f for f in out["plan_semanal"]}
+    # «a» ya gastó sus 20 h; «b» (30 h) venció: todo a la primera semana después del corte, como en la hoja de los JP.
+    assert ps[D(2026, 11, 2)]["horas_necesarias_semana"] == 30
+    assert ps[D(2026, 11, 9)]["horas_necesarias_semana"] is None
+    assert all(f["ritmo_real"] == 10 for f in out["plan_semanal"])
+    nec_jp = {f["semana_inicio"]: f["horas_necesarias_semana"] for f in r.plan_vs_real if f["persona"] == "(proyecto)"}
+    assert nec_jp == {D(2026, 11, 2): 30}
+    sin = run.filas_de(_procesar([_t("f", "05 Ingeniería")], entradas), CORTE, DEP, AHORA)["proyectos"][0]
+    assert sin["hh_pendientes"] is None and sin["horas_necesarias_semana"] is None
+    assert sin["fecha_termino_estimada"] is None

@@ -79,7 +79,7 @@ Retenidas hoy: PJ-2026.0225 Correa 2741 (presupuesto contractual por confirmar c
 (1400570000001689) y PJ-EJEMPLO (1400570000002107). Para liberar una lista, se borra su entrada y la Rev. 0 se congela
 en la corrida siguiente.
 
-**Ritmo y desfase** (solo en `proyectos`, foto del último corte):
+**Ritmo, desfase y horas necesarias** (en `proyectos`, foto del último corte; dos de ellas también en `plan_semanal`):
 
 - `ritmo_real` (`presupuesto.ritmo_real`): promedio semanal de las horas registradas en la lista PJ en las **2 últimas
   semanas cerradas** (lunes a domingo, con el domingo en el corte o antes: en un corte de domingo cuenta su propia
@@ -90,6 +90,23 @@ en la corrida siguiente.
   Σ (1 − avance real) × HH de las tareas del presupuesto (las mismas que reparte la proyección). Positivo: a este ritmo
   el proyecto termina esas semanas después del plazo; negativo: le sobran. Vacío si no hay ritmo (0 h en las dos
   semanas), si no hay término contractual o si el proyecto no tiene curva (`sin_presupuesto`, `recurrente`).
+- `hh_pendientes`: las HH pendientes de arriba (Σ (1 − avance real) × HH del presupuesto). Vacío si el proyecto no
+  tiene curva.
+- `horas_necesarias_semana` (`presentacion.horas_necesarias_semana`): HH pendientes / semanas hasta el término
+  contractual (días hábiles para la entrega / 5). Es el ritmo que haría falta para terminar en plazo; se compara con
+  `ritmo_real`. Vacío si el plazo ya venció o vence el día del corte (no quedan semanas), si no hay término contractual
+  o si el proyecto no tiene curva.
+- `fecha_termino_estimada` (`presentacion.fecha_termino_estimada`): corte + HH pendientes / `ritmo_real` semanas, en
+  días corridos. Vacío si no hay ritmo o el proyecto no tiene curva.
+
+En `plan_semanal`, por semana:
+
+- `horas_necesarias_semana` (`plan_vs_real.necesarias_por_semana`): para cada tarea del presupuesto abierta y con fecha
+  de término, sus HH menos lo gastado en ella y sus descendientes, en partes iguales en las semanas posteriores al
+  corte hasta la de su término (si ya venció, todo en la primera semana siguiente). Es la misma serie de la fila
+  «(proyecto)» de la hoja de los JP. No coincide con `proyectos.horas_necesarias_semana`: esa reparte lo pendiente
+  (por avance) parejo hasta el término contractual; esta, lo no gastado de cada tarea hasta su propio término.
+- `ritmo_real`: el de `proyectos`, repetido en cada semana del proyecto (para la línea de referencia en Looker).
 
 ## 1b. Contratos recurrentes (programas de servicio continuo)
 

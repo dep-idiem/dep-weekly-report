@@ -205,6 +205,25 @@ def semanas_desfase(pendientes: float | None, ritmo: float | None, corte: dt.dat
     return pendientes / ritmo - dias_habiles_para_entrega(corte, contractual, cal) / 5
 
 
+def horas_necesarias_semana(pendientes: float | None, corte: dt.date, contractual: dt.date | None,
+                             cal) -> float | None:
+    """Horas por semana que harian falta para completar las HH pendientes antes del termino contractual: pendientes /
+    (dias habiles para la entrega / 5). Vacio sin pendientes, sin termino contractual o con el plazo vencido (o que vence
+    el dia del corte): ahi no hay semanas que repartir."""
+    if pendientes is None or contractual is None:
+        return None
+    dias = dias_habiles_para_entrega(corte, contractual, cal)
+    return pendientes / (dias / 5) if dias and dias > 0 else None
+
+
+def fecha_termino_estimada(pendientes: float | None, ritmo: float | None, corte: dt.date) -> dt.date | None:
+    """Fecha en que se completan las HH pendientes al ritmo real: corte + pendientes / ritmo semanas (dias corridos,
+    redondeado al dia). Vacio sin ritmo o sin pendientes."""
+    if not ritmo or ritmo <= 0 or pendientes is None:
+        return None
+    return corte + dt.timedelta(days=round(pendientes / ritmo * 7))
+
+
 def extension_plazo(contractual: dt.date | None, vigente: dt.date | None, cal) -> tuple[bool | None, int | None]:
     """(es_extension, dias_extension) del termino vigente (vencimiento de la lista en ClickUp) frente a la entrega
     contractual de la linea base, en dias habiles del calendario del modo.

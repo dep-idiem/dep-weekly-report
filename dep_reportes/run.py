@@ -107,6 +107,7 @@ class ResultadoLista:
     programa: str = ""                  # programa de servicio continuo (programas.py) o vacio
     plan_vs_real: list = field(default_factory=list)    # filas por persona (hoja aparte; plan_vs_real.py)
     heredadas: list = field(default_factory=list)       # tareas con due anterior al inicio del proyecto
+    necesarias: dict = field(default_factory=dict)      # lunes -> horas necesarias (plan_vs_real.necesarias_por_semana)
     programada: PROG.Programada | None = None           # tareas con que se reparte la programada (programada.py)
     estado_curva: str = PROG.OK                         # ok / sin_presupuesto / presupuesto_incoherente / retenida / recurrente
 
@@ -361,12 +362,13 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     cajones = [PVR.Cajon(t.id, t.hh, t.due, hpt.get(t.id, 0.0), por_id[t.id].cerrada)
                for t in MT.universo(tm) if not P.es_no_aplica(t)]
     regs = PVR.registros(entradas_lista, PVR.ORIGEN_PJ) + PVR.registros(entradas_ss, PVR.ORIGEN_SS)
+    necesarias = PVR.necesarias_por_semana(cajones, corte)
     pvr = PVR.filas(corte, "", lista.id, codigo.removeprefix("PJ-"), nombre_corto, jp.username if jp else SIN_JP,
-                    plan_p, regs, PVR.necesarias_por_semana(cajones, corte))
+                    plan_p, regs, necesarias)
     r = ResultadoLista(lista, codigo, jp, tareas, tm, horas, dec, lb_filas, nuevas, res,
                        P.para_hoja(adv, con_hh), adv, clases, {k: o for k, (_, o) in av.items()}, pres, filas_ps,
                        extra, situacion)
-    r.plan_vs_real, r.heredadas = pvr, [t.id for t in heredadas]
+    r.plan_vs_real, r.heredadas, r.necesarias = pvr, [t.id for t in heredadas], necesarias
     r.programada, r.estado_curva = progr, estado_curva
     return r
 
@@ -485,7 +487,8 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
     # Ritmo de las 2 ultimas semanas cerradas y desfase frente al termino contractual (sin curva: sin desfase).
     ritmo = PRES.ritmo_real(r.horas, corte)
     con_curva = r.estado_curva not in (PROG.SIN_PRESUPUESTO, PROG.RECURRENTE)
-    desfase = PR.semanas_desfase(mt.get("hh_pendientes") if con_curva else None, ritmo, corte, contractual, modo.cal)
+    pend = mt.get("hh_pendientes") if con_curva else None
+    desfase = PR.semanas_desfase(pend, ritmo, corte, contractual, modo.cal)
     out: dict[str, list[dict]] = defaultdict(list)
     out["proyectos"].append({
         "list_id": lid, "nombre": r.lista.name, **idn,
@@ -495,7 +498,9 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
         "estado_linea_base": "vigente" if r.lb_filas else LB.PROVISIONAL if prov else "sin_linea_base",
         "rev_vigente": rev, "actualizado_en": ahora,
         "estado_proyecto": r.situacion.estado, "corte_cierre": r.situacion.corte_cierre, **plazo, **curva,
-        "ritmo_real": ritmo, "semanas_desfase": desfase,
+        "ritmo_real": ritmo, "semanas_desfase": desfase, "hh_pendientes": pend,
+        "horas_necesarias_semana": PR.horas_necesarias_semana(pend, corte, contractual, modo.cal),
+        "fecha_termino_estimada": PR.fecha_termino_estimada(pend, ritmo, corte),
     })
     tc = {"corte": corte, "tipo_corte": tipo_corte}
     sit = r.situacion
@@ -547,7 +552,8 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
     if any(f["hh_planificadas"] or f["hh_registradas"] for f in r.plan_semanal):
         out["plan_semanal"] += [{**tc, "list_id": lid, **{k: idn[k] for k in ("codigo", "proyecto", "jp_nombre", "jp_email",
                                                                                "estado_proyecto")},
-                                 **f} for f in r.plan_semanal]
+                                 **f, "horas_necesarias_semana": r.necesarias.get(f["semana"]) if con_curva else None,
+                                 "ritmo_real": ritmo} for f in r.plan_semanal]
     out["serie_diaria"] += _serie(r, tc, idn)
     out["advertencias"] += [{**a, **tc, **idn} for a in r.advertencias]
     out["linea_base"] += [f.fila() for f in r.lb_nuevas]
