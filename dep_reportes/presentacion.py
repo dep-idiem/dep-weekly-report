@@ -77,6 +77,9 @@ def pct_presupuesto_usado(hh_gastadas: float | None, hh_linea_base: float | None
 
 # Motivos sin linea base, en orden de prioridad (el primero que aplique).
 MOTIVOS_SIN_LB = [
+    ("proyecto_sin_presupuesto", "no hay tareas con HH Presupuestadas"),
+    ("presupuesto_incoherente", "las horas registradas superan el presupuesto; la línea base se congelará cuando se "
+                                "corrija"),
     ("linea_base_sin_hh", "no hay tareas con HH presupuestadas"),
     ("hh_en_padre_y_subtarea", "hay HH contadas dos veces; la línea base se congelará cuando se corrija"),
     ("tarea_1_2_no_aplica", "la tarea 1.2 está en No Aplica y la línea base se congela a mano"),
@@ -336,6 +339,18 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
         return f"Línea base retenida por Administración DEP{m}; el programado es provisional"
     if tipo == "linea_base_sin_hh":
         return "No hay tareas con HH presupuestadas: no se puede congelar la línea base"
+    if tipo == "proyecto_sin_presupuesto":
+        return "Ninguna tarea tiene HH Presupuestadas: el proyecto no tiene curva programada ni línea base"
+    if tipo == "presupuesto_incoherente":
+        if "presupuesto" in d and "gastadas" in d:
+            return (f"Las horas registradas ({num(d['gastadas'])} h) superan el presupuesto ({num(d['presupuesto'])} HH): "
+                    "la línea base no se congela hasta corregir las HH Presupuestadas")
+        return "Las horas registradas superan el presupuesto: la línea base no se congela hasta corregirlo"
+    if tipo == "fechas_fuera_de_lista":
+        if d.get("motivo"):
+            return (f"{t} ({d['motivo']}): sus HH se reparten entre el inicio y el término de la lista; corregir sus "
+                    "fechas")
+        return f"{t} no tiene fechas válidas dentro del plazo de la lista: sus HH se reparten en todo el plazo"
     if tipo == "codigo_duplicado_en_clickup":
         if d.get("codigo_base") and d.get("codigo"):
             return (f"Otra lista de ClickUp usa el mismo código {d['codigo_base']}: en los reportes esta aparece "

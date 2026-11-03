@@ -258,7 +258,7 @@ def test_ida_y_vuelta_de_valores():
             "delta_hh_gastadas": 41.5, "semaforo": "verde", "fecha_termino_usada": D(2026, 10, 2),
             "reprocesado_en": dt.datetime(2026, 9, 25, 15, 37, 26, tzinfo=TZ),
             "fecha_entrega_contractual": D(2026, 10, 2), "es_extension": True, "dias_extension": 1,
-            "entrega_texto": "02-10-2026"}
+            "entrega_texto": "02-10-2026", "estado_curva": "ok", "programada_modo": "mixta"}
     ti = E.tipos("metricas_semanales")
     valores = [E.columnas("metricas_semanales"), [A.celda_sheets(fila[c], ti[c]) for c in E.columnas("metricas_semanales")]]
     assert A.filas_desde_valores("metricas_semanales", valores) == [fila]

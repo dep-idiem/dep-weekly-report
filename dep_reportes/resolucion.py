@@ -135,8 +135,8 @@ CATALOGO: dict[str, Entrada] = {
         JP, IMPIDE, IMPIDE, lambda c, a: f"En la lista {_l(c)}, carga las HH Presupuestadas en las tareas finales "
                                          "(subtareas) del proyecto."),
     "linea_base_tardia": Entrada(
-        "La línea base se congeló cuando el proyecto ya había empezado (primera hora registrada o primera porción "
-        "antes de la semana del corte), con el plan de ese día.",
+        "La línea base se congeló cuando el proyecto ya había empezado (primera hora registrada antes de la semana del "
+        "corte), con el plan de ese día.",
         INFORMATIVA, INFORMATIVA, INFORMATIVA, _tardia),
     "no_aplica_con_hh": Entrada(
         "Una tarea en No Aplica tiene HH Presupuestadas.",
@@ -326,6 +326,24 @@ CATALOGO.update({
         "Administración DEP retuvo la línea base del proyecto (presupuesto por confirmar): el programado es provisional.",
         ADMIN, INFORMATIVA, INFORMATIVA,
         lambda c, a: f"{a} confirma el presupuesto y libera la línea base; se congela en la siguiente actualización."),
+    "proyecto_sin_presupuesto": Entrada(
+        "Ninguna tarea de la lista tiene HH Presupuestadas: no hay curva programada ni se congela la línea base.",
+        JP, IMPIDE, IMPIDE,
+        lambda c, a: f"En la lista {_l(c)}, carga las HH Presupuestadas del proyecto (en cada tarea o en su padre, "
+                     "nunca en los dos) con sus fechas de inicio y término.",
+        prioridad=ALTA),
+    "presupuesto_incoherente": Entrada(
+        "Las horas registradas superan el presupuesto (suma de HH Presupuestadas) antes de congelar la línea base: el "
+        "presupuesto está incompleto, así que no se congela.",
+        JP, IMPIDE, IMPIDE,
+        lambda c, a: f"En la lista {_l(c)}, completa las HH Presupuestadas del proyecto; la línea base se congela en "
+                     "la siguiente actualización.",
+        prioridad=ALTA),
+    "fechas_fuera_de_lista": Entrada(
+        "Una tarea con HH Presupuestadas no tiene fechas, las tiene al revés o caen fuera del inicio y término de la "
+        "lista: sus HH se reparten en todo el plazo de la lista.",
+        JP, DISTORSIONA, DISTORSIONA,
+        lambda c, a: f"En ClickUp, corrige las fechas de {_t(c)} para que queden dentro del plazo de la lista."),
 })
 
 
@@ -386,6 +404,9 @@ ACCION_GRUPAL: dict[str, Callable[[str, int, bool, str], str]] = {
         f"Mueve las HH Presupuestadas de estas {n} porciones a su paquete y déjalas solo con time estimate: {ts}."),
     "horas_en_tarea_padre": lambda ts, n, lb, a: (
         f"Registra las horas en las subtareas, no en la tarea padre, en estas {n} tareas: {ts}."),
+    "fechas_fuera_de_lista": lambda ts, n, lb, a: (
+        f"En ClickUp, corrige las fechas de estas {n} tareas para que queden dentro del plazo de la lista (hoy sus HH "
+        f"se reparten en todo el plazo): {ts}."),
     "no_aplica_con_hh": lambda ts, n, lb, a: (
         f"En ClickUp, borra las HH Presupuestadas de estas {n} tareas en No Aplica o, si sí aplican, cambia su "
         f"estado: {ts}."),

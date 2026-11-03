@@ -109,24 +109,14 @@ def test_nota_de_consumo_en_el_titular():
     assert txt.startswith("Avance real 30,0 % (por consumo, tope 90 %) frente a 40,0 % programado")
 
 
-# --- Cambio 2: Rev. 0 al primer evento, programado provisional --------------------------------------
+# --- Rev. 0 con la primera hora registrada, programado provisional antes ----------------------------
+# Desde el 2026-11-03 (TAREA_curva_programada_unica) la primera porción ya no dispara la Rev. 0.
 
 def test_evento_congelar():
-    assert LB.evento_congelar(_v2(), [], CORTE) is None
-    assert LB.evento_congelar(_v2(), [D(2026, 11, 20)], CORTE) is None          # hora posterior al corte
-    ev = LB.evento_congelar(_v2(), [D(2026, 11, 6), D(2026, 11, 5)], CORTE)
+    assert LB.evento_congelar([], CORTE) is None
+    assert LB.evento_congelar([D(2026, 11, 20)], CORTE) is None          # hora posterior al corte
+    ev = LB.evento_congelar([D(2026, 11, 6), D(2026, 11, 5)], CORTE)
     assert (ev.texto, ev.fecha) == ("primera hora registrada el 05-11-2026", D(2026, 11, 5))
-    porcion = _t("s1", "Modelación · 09-nov", "c6", te=8 * 3_600_000, asignados=("ana",), s=D(2026, 11, 9),
-                 d=D(2026, 11, 13))
-    assert LB.evento_congelar(_v2(porcion), [], CORTE).texto == "primera porción creada «Modelación · 09-nov» el 02-11-2026"
-    # lo primero de los dos: la porción (creada el 02-11) antes que la hora (05-11)
-    assert LB.evento_congelar(_v2(porcion), [D(2026, 11, 5)], CORTE).fecha == D(2026, 11, 2)
-    sin_responsable = _t("s2", "Modelación · 09-nov", "c6", te=8 * 3_600_000, s=D(2026, 11, 9))
-    sin_estimacion = _t("s3", "Informe · 07-dic", "c7", asignados=("ana",), s=D(2026, 12, 7))
-    sin_fechas = _t("s4", "Informe · 07-dic", "c7", te=3_600_000, asignados=("ana",))
-    assert LB.evento_congelar(_v2(sin_responsable, sin_estimacion, sin_fechas), [], CORTE) is None
-    # misma regla en una lista antigua (la 1.2 ya no se usa)
-    assert LB.evento_congelar(ANTIGUA, [D(2026, 11, 5)], CORTE).fecha == D(2026, 11, 5)
 
 
 def test_decidir_misma_regla_v2_y_antigua():
@@ -214,11 +204,11 @@ def test_v2_primera_hora_congela_rev0_con_todos_los_cajones():
     assert ms["titular"].startswith("Línea base Rev. 0 congelada en este corte (primera hora registrada el 05-11-2026). ")
 
 
-def test_v2_primera_porcion_congela_rev0():
+def test_v2_primera_porcion_ya_no_congela_rev0():
     porcion = _t("s1", "Modelación · 09-nov", "c6", te=8 * 3_600_000, asignados=("ana",), s=D(2026, 11, 9),
                  d=D(2026, 11, 13))
     r = _procesar(_v2(porcion))
-    assert r.lb_nuevas and "primera porción creada" in r.lb_nuevas[0].motivo
+    assert r.lb_nuevas == [] and run.provisional(r)
 
 
 def test_reproceso_de_un_corte_provisional_queda_sin_curva():

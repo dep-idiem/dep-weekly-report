@@ -21,6 +21,8 @@
   "horizonte_vencimientos_dias": 14,
   "ss_registro_list_id": "901324495476",
   "linea_base_retenida": {
-    "1400570000001233": "presupuesto contractual por confirmar contra la propuesta"
+    "1400570000001233": "presupuesto contractual por confirmar contra la propuesta",
+    "1400570000001689": "lista de pruebas PJ-TEST (no es un proyecto)",
+    "1400570000002107": "lista de ejemplo PJ-EJEMPLO (no es un proyecto)"
   }
 }

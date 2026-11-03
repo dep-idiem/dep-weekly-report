@@ -128,7 +128,9 @@ def recalcular(corte: dt.date, fila: Mapping, fotos: Sequence[Mapping], lb_filas
                        f.get("due"), f.get("hh"), f.get("avance_real"), f.get("estado")) for f in fotos]
     # Las horas propias de cada tarea hasta el corte: fechadas en el corte (las metricas usan solo el acumulado).
     horas = [Horas(corte, float(f["hh_gastadas_acum"]), f["task_id"]) for f in fotos if f.get("hh_gastadas_acum")]
-    lb_t, fase_lb = LB.a_tareas(lb_filas) if lb_filas else (None, {})
+    # Misma programada que la corrida en vivo (linea_base.programada: respaldo al plazo de la lista).
+    lb_t = LB.programada(lb_filas, modo.cal).tareas if lb_filas else None
+    fase_lb = {f.task_id: f.fase for f in lb_filas}
     res = P.calcular(lb_t, tm, horas, corte, fin, modo, fase_lb, hh_historicas=hist, entrega=fin)
     nueva = dict(fila)
     nueva.update({c: res.metricas.get(c) for c in RECALCULADAS})

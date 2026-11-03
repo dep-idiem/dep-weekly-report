@@ -53,6 +53,60 @@
         "en_planificacion", "sin_tarea_1_2", "tarea_1_2_no_aplica", "varias_tareas_1_2", "linea_base_sin_hh",
         "codigo_duplicado_en_clickup", "lista_combinada", "fase_de_otro_proyecto", "sin_presupuesto_contractual"
       ]
+    },
+    "AITO-HPC": {
+      "nombre": "AITO Hospital Provincia Cordillera",
+      "cliente": "Servicio de Salud Metropolitano Sur Oriente",
+      "_nota": "contrato recurrente: mismo tratamiento que CMP-SHM, fuera de la curva S (TAREA_curva_programada_unica, Ale, 2026-11-03)",
+      "contratos": {
+        "0321": {
+          "nombre": "Extensión 2026 AITO HPC",
+          "codigo": "PJ-2025.0321",
+          "presupuesto": {"hh_periodo": null, "hh_mes": null, "periodo_inicio": "2025-01-05", "periodo_fin": "2027-01-04",
+                          "_pendiente": "cifra de HH contratadas (las fases de la lista suman 2.712 HH Presupuestadas)"}
+        }
+      },
+      "lineas": {
+        "servicio": "Servicio",
+        "cartas": "Cartas"
+      },
+      "listas": [
+        {"list_id": "901326861385", "linea": "servicio", "contrato": "0321", "_nombre": "PJ-2025.0321 | Extensión 2026 AITO HPC | Servicio de Salud Metropolitano Sur Oriente"},
+        {"list_id": "1400570000002735", "linea": "cartas", "contrato": "0321", "_nombre": "PJ-2025.0321 |Cartas AITO HPC | Servicio de Salud Metropolitano Sur Oriente"}
+      ],
+      "entregables": {},
+      "advertencias_omitidas": [
+        "proyecto_con_termino_vencido", "sin_termino_vigente", "horas_fuera_de_plazo",
+        "en_planificacion", "sin_tarea_1_2", "tarea_1_2_no_aplica", "varias_tareas_1_2", "linea_base_sin_hh",
+        "codigo_duplicado_en_clickup", "lista_combinada", "fase_de_otro_proyecto", "sin_presupuesto_contractual"
+      ]
+    },
+    "AITO-SOTERO": {
+      "nombre": "AITO Hospital Sótero del Río",
+      "cliente": "",
+      "_nota": "contrato recurrente: mismo tratamiento que CMP-SHM, fuera de la curva S (TAREA_curva_programada_unica, Ale, 2026-11-03)",
+      "contratos": {
+        "0008": {
+          "nombre": "AITO Hospital Sótero del Río",
+          "codigo": "PJ-2024.0008",
+          "presupuesto": {"hh_periodo": null, "hh_mes": null, "periodo_inicio": "2024-08-01", "periodo_fin": "2027-07-31",
+                          "_pendiente": "cifra de HH contratadas"}
+        }
+      },
+      "lineas": {
+        "servicio": "Servicio",
+        "cartas": "Cartas"
+      },
+      "listas": [
+        {"list_id": "901327681515", "linea": "servicio", "contrato": "0008", "_nombre": "PJ-2024.0008 | AITO Hospital Sotero del Río"},
+        {"list_id": "1400570000002734", "linea": "cartas", "contrato": "0008", "_nombre": "PJ-2024.0008 | Cartas Hospital Sotero del Río"}
+      ],
+      "entregables": {},
+      "advertencias_omitidas": [
+        "proyecto_con_termino_vencido", "sin_termino_vigente", "horas_fuera_de_plazo",
+        "en_planificacion", "sin_tarea_1_2", "tarea_1_2_no_aplica", "varias_tareas_1_2", "linea_base_sin_hh",
+        "codigo_duplicado_en_clickup", "lista_combinada", "fase_de_otro_proyecto", "sin_presupuesto_contractual"
+      ]
     }
   }
 }

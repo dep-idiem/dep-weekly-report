@@ -183,8 +183,10 @@ def test_lista_antigua_con_horas_congela_tardia_y_el_titular_lo_dice():
     r = _procesar(_correa(), [_e("1", "p1", "Luciano", D(2026, 10, 20), 4)])
     assert {f.tipo for f in r.lb_nuevas} == {"tardia"} and {f.task_id for f in r.lb_nuevas} == {"p1", "p2"}
     ms = run.filas_de(r, CORTE, por_nombre("dep"), AHORA)["metricas_semanales"][0]
+    # Solo la primera hora registrada dispara la Rev. 0 (la porción del 14-10 ya no; TAREA_curva_programada_unica).
     assert ms["titular"].startswith("Línea base Rev. 0 congelada en este corte (tardía, con el plan de hoy; "
-                                    "primera porción creada «Desarrollo Informe» el 14-10-2026). ")
+                                    "primera hora registrada el 20-10-2026). ")
+    assert ms["estado_curva"] == "ok" and ms["programada_modo"] == "tareas"
 
 
 def test_horas_ss_aparte_con_advertencia_fuera_de_la_curva():

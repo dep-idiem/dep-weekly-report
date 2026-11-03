@@ -57,6 +57,10 @@ ADV_FUERA_DE_FOLDERS = "proyecto_fuera_de_folders"  # filas en la hoja, pero la 
 ADV_FECHAS_HEREDADAS = "fechas_anteriores_al_inicio"   # due < inicio del proyecto: no cuentan como atraso
 ADV_HORAS_EN_SS = "horas_en_tarea_ss"                 # horas registradas en la tarea de la SS (SS_REGISTRO)
 ADV_LB_RETENIDA = "linea_base_retenida"               # config "linea_base_retenida": provisional hasta confirmar
+# TAREA_curva_programada_unica (2026-11-03): programada.py
+ADV_PROYECTO_SIN_PRESUPUESTO = "proyecto_sin_presupuesto"   # ninguna tarea con HH: sin programada ni línea base
+ADV_PRESUPUESTO_INCOHERENTE = "presupuesto_incoherente"     # horas registradas > presupuesto antes de la Rev. 0
+ADV_FECHAS_FUERA_DE_LISTA = "fechas_fuera_de_lista"         # tarea del presupuesto repartida en el plazo de la lista
 # Programas de servicio continuo (programas.py): para Administracion DEP
 ADV_PROGRAMA_COMPARTIDAS = "programa_horas_compartidas"      # nivel programa (sin lista)
 ADV_ENTREGABLE_PLANTILLA = "entregable_plantilla_sin_usar"
@@ -72,6 +76,7 @@ NIVEL_PROYECTO = {
     ADV_NOMBRE_SIN_FORMATO, ADV_HORAS_ADMIN, ADV_FUERA_DE_PLAZO, ADV_FASE_OTRO_PROYECTO, ADV_TT_SIN_CLICKUP,
     ADV_LISTA_COMBINADA, ADV_SIN_PRESUPUESTO, ADV_PRESUPUESTO_POR_AGOTARSE, ADV_CUMPLIMIENTO, ADV_PAQUETE_DESAPARECIDO,
     ADV_PROYECTO_FINALIZADO, ADV_FUERA_DE_FOLDERS, ADV_FECHAS_HEREDADAS, ADV_HORAS_EN_SS, ADV_LB_RETENIDA,
+    ADV_PROYECTO_SIN_PRESUPUESTO, ADV_PRESUPUESTO_INCOHERENTE,
     "hh_en_padre_y_subtarea",   # doble conteo (calidad.DOBLE_CONTEO)
 }
 # De nivel tarea, pero se escriben aunque la tarea no tenga HH Presupuestadas.
@@ -223,8 +228,8 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
     inclusivo = modo.base_en_control
     gastadas = horas_ord.hasta(control, inclusive=inclusivo)
     if lb is not None:
-        # Paquete a paquete: solo si cambio la HH de uno ya congelado. Las tareas nuevas no la disparan
-        # (los paquetes nuevos se congelan como filas incrementales, linea_base.incrementales).
+        # Paquete a paquete: solo si cambio la HH de uno ya congelado. Las tareas nuevas no la disparan (desde el
+        # 2026-11-03 no se agregan a la línea base: se ven como desvío entre hh_actuales_clickup y total_hh).
         hh_act = {t.id: m._hh(t) for t in actuales}
         cambiados = [t for t in lb_u if t.id in hh_act and t.id not in ids_na and abs(hh_act[t.id] - (t.hh or 0)) > 1e-6]
         if cambiados:

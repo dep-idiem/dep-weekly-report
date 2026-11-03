@@ -39,6 +39,9 @@ METRICAS = [("total_hh", NUMERO), ("hh_prog_acum", NUMERO), ("hh_gastadas_acum",
 # término» (presentacion.entrega_texto).
 PLAZO = [("fecha_entrega_contractual", FECHA), ("es_extension", BOOLEANO), ("dias_extension", ENTERO),
          ("entrega_texto", TEXTO)]
+# Curva programada única (programada.py, 2026-11-03): estado_curva ok / sin_presupuesto / presupuesto_incoherente /
+# retenida / recurrente; programada_modo tareas / mixta / lineal (vacío si no hay programada).
+CURVA = [("estado_curva", TEXTO), ("programada_modo", TEXTO)]
 
 TABLAS: dict[str, list[tuple[str, str]]] = {
     # Plazo (presentacion.extension_plazo): entrega contractual de la linea base vigente frente al termino vigente de la
@@ -47,7 +50,7 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                   ("jp_email", TEXTO),
                   ("estado_lista", TEXTO), ("fecha_inicio", FECHA), ("fecha_termino_vigente", FECHA),
                   ("estado_linea_base", TEXTO), ("rev_vigente", ENTERO), ("actualizado_en", FECHA_HORA)]
-                 + ESTADO + [("corte_cierre", FECHA)] + PROGRAMA + PLAZO,
+                 + ESTADO + [("corte_cierre", FECHA)] + PROGRAMA + PLAZO + CURVA,
     "linea_base": [("list_id", TEXTO), ("rev", ENTERO), ("tipo", TEXTO), ("fecha_captura", FECHA_HORA), ("motivo", TEXTO),
                    ("fecha_inicio", FECHA), ("fecha_entrega_contractual", FECHA), ("task_id", TEXTO),
                    ("task_nombre", TEXTO), ("fase", TEXTO), ("hh", NUMERO), ("start", FECHA), ("due", FECHA)],
@@ -66,7 +69,7 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                           # Reproceso (reproceso.py): termino con que se repartieron los pendientes (insumo del reproceso
                           # desde fotos) y, si el corte se recalculo con datos posteriores a su primera escritura, cuando.
                           + [("fecha_termino_usada", FECHA), ("reprocesado_en", FECHA_HORA)]
-                          + PLAZO,
+                          + PLAZO + CURVA,
     "metricas_fase": [("corte", FECHA)] + CORTE + [("list_id", TEXTO)] + IDENT
                      + [("fase", TEXTO), ("hh_linea_base", NUMERO), ("hh_prog_acum", NUMERO),
                         ("hh_gastadas_acum", NUMERO), ("avance_real", NUMERO)],

@@ -5,8 +5,8 @@ Una lista es v2 si alguna tarea de primer nivel se llama «00 Administración y 
 - los cajones son las tareas de primer nivel con HH Presupuestadas, «00 Administración y cierre» incluida: entran a
   la curva S y el presupuesto contractual es la suma de sus HH (presupuesto.hh_contrato);
 - un cajón con HH no es una «fase con HH» (estructura.clasificar);
-- la Rev. 0 se congela con la regla común a todas las listas desde el 2026-11-02 (linea_base.evento_congelar): lo
-  primero entre la primera hora registrada y la primera porción creada; hasta entonces el programado es PROVISIONAL;
+- la Rev. 0 y la programada siguen la regla común a todas las listas desde el 2026-11-03 (linea_base.evento_congelar,
+  programada.py): se congela con la primera hora registrada; hasta entonces el programado es PROVISIONAL;
 - avance de un cajón: cerrado = 100 %; si no, «Avance Real» manual; si no, por consumo: horas / HH con tope 90 %
   (estructura.avance_efectivo).
 """

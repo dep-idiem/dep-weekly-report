@@ -1,39 +1,94 @@
 # Definiciones del reporte semanal DEP
 
-Vigentes desde el 2026-11-02 (TAREA_reportes_plan_vs_real.md, decisiones de Ale del 2026-11-02). Código en
-`dep_reportes/`; entre paréntesis, la función que implementa cada regla.
+Vigentes desde el 2026-11-03 (TAREA_curva_programada_unica.md: un solo modo de curva S para todas las listas PJ,
+antiguas y v2) y, en lo que esa tarea no cambia, desde el 2026-11-02 (TAREA_reportes_plan_vs_real.md). Código en
+`dep_reportes/`; entre paréntesis, la función que implementa cada regla. Lo único que se considera confiable en todas
+las listas son las **fechas de la lista** y las **horas registradas**; solo se leen datos de ClickUp.
 
-## 1. Presupuesto y línea base
+## 1. Presupuesto, programada y línea base
 
-**HH del proyecto (universo de la curva S).** Suma de «HH Presupuestadas» de las tareas que **no tienen ningún
-ancestro con HH**: si el padre, el abuelo o cualquier ancestro ya tiene HH, la tarea no suma
-(`adaptador_clickup.con_ancestro_con_hh`, `a_tareas_metrica`). En una lista antigua, «00 Administración» no cuenta
-como ancestro con HH: sus HH son el presupuesto contractual y quedan fuera de la curva; en una lista v2,
-«00 Administración y cierre» es un cajón más. El detector de calidad sigue viendo las HH tal cual están en ClickUp,
-para avisar el doble conteo (`hh_en_padre_y_subtarea`).
+**Contractual.** Inicio y término del contrato = `start_date` y `due_date` de la lista PJ. La extensión es el
+`due_date` actual de la lista menos el guardado en la Rev. 0 (`fecha_entrega_contractual`, `es_extension`,
+`dias_extension`; sección 2).
+
+**Tareas que aportan presupuesto (universo de la curva S).** Las tareas con «HH Presupuestadas» > 0 que **no tienen
+ningún ancestro con HH**: si el padre, el abuelo o cualquier ancestro ya tiene HH, la tarea no suma
+(`adaptador_clickup.con_ancestro_con_hh`, `a_tareas_metrica`). Presupuesto = suma de sus HH. **Nada más cuenta**: ni
+porciones ni `time_estimate`. En una lista antigua, «00 Administración» no cuenta como ancestro con HH: sus HH son el
+presupuesto contractual y quedan fuera de la curva; en una lista v2, «00 Administración y cierre» es un cajón más. El
+detector de calidad sigue viendo las HH tal cual están en ClickUp, para avisar el doble conteo
+(`hh_en_padre_y_subtarea`).
+
+**Programada** (`programada.programar`). Cada tarea que aporta presupuesto reparte sus HH en partes iguales por día
+hábil entre su `start_date` y su `due_date`, y se acumula. Respaldo: si la tarea no tiene inicio o término, las
+fechas están al revés, el rango no tiene días hábiles o alguna fecha cae fuera de [inicio, término] de la lista, sus
+HH se reparten entre el inicio y el término de la lista, y queda la advertencia `fechas_fuera_de_lista` (nivel tarea,
+para el JP, con el motivo). Si la lista no tiene inicio o término, el respaldo usa el inicio más temprano o el término
+más tardío de las tareas con fechas propias. Columna `programada_modo` (en `proyectos` y `metricas_semanales`):
+
+| programada_modo | significado |
+|---|---|
+| `tareas` | todas las tareas se reparten con sus propias fechas |
+| `mixta` | algunas cayeron al respaldo |
+| `lineal` | todas cayeron al respaldo: la programada es una recta entre inicio y término de la lista |
+
+Las fechas de las tareas **sin** HH no se leen para la programada (tampoco para el inicio del proyecto cuando la lista
+no tiene inicio: `linea_base.inicio_proyecto` usa las tareas con HH).
+
+**Real.** Horas registradas acumuladas por fecha trabajada, como antes. Las horas de la tarea de la SS van en columna
+aparte (sección 3), fuera de la curva.
 
 **Rev. 0, la misma regla para todas las listas** (`linea_base.evento_congelar`, `linea_base.decidir`). Se congela con
-**lo primero que ocurra** entre:
+la **primera hora registrada** en la lista PJ (fecha trabajada, hasta el corte). Ya no la disparan la tarea «1.2 Plan
+de Trabajo» ni la primera porción. Al congelar se guardan, por tarea que aporta presupuesto, sus HH y sus fechas de
+ClickUp, y el inicio y el término de la lista (`fecha_inicio`, `fecha_entrega_contractual` de `linea_base`). La
+programada de una línea base se reconstruye siempre con esos datos y la misma regla de respaldo, con el plazo
+guardado (`linea_base.programada`, también en el reproceso): cambios posteriores en las tareas o en las fechas de la
+lista se ven como desvío y no reescriben el plan. Las tareas creadas después de la Rev. 0 **no** se agregan a la línea
+base (ya no hay filas `incremental` nuevas): se ven en `hh_actuales_clickup` frente a `total_hh`.
 
-- la primera hora registrada en la lista PJ (fecha trabajada, hasta el corte);
-- la primera **porción** creada: una tarea con responsable, alguna fecha y `time_estimate` (fecha de creación hasta el
-  corte).
+Hasta la primera hora el programado es **provisional**: sale de las HH y fechas vigentes y del plazo actual de la
+lista, no se guarda y el titular empieza con «Programado provisional (aún sin línea base congelada).».
 
-Hasta entonces el programado es **provisional**: sale de las HH y fechas vigentes, no se guarda y el titular empieza
-con «Programado provisional (aún sin línea base congelada).». La tarea «1.2 Plan de Trabajo» ya no dispara nada, y el
-mensaje «el proyecto está en planificación (la tarea 1.2 sigue abierta)» desaparece.
-
-- **Normal o tardía.** Si el evento cae antes de la semana del corte y la lista ya aparecía en cortes anteriores, la
-  Rev. 0 se congela como `tardia`, con la foto de hoy. Mientras esa Rev. 0 esté vigente queda la advertencia
-  `linea_base_tardia`.
+- **Normal o tardía.** Si la primera hora cae antes de la semana del corte y la lista ya aparecía en cortes
+  anteriores, la Rev. 0 se congela como `tardia`, con la foto de hoy. Mientras esa Rev. 0 esté vigente queda la
+  advertencia `linea_base_tardia`.
 - **El titular lo dice.** En el corte en que se congela, el titular empieza con
-  «Línea base Rev. 0 congelada en este corte (… evento …).» (`presentacion.nota_congelada`).
+  «Línea base Rev. 0 congelada en este corte (… primera hora registrada el dd-mm-aaaa).» (`presentacion.nota_congelada`).
 - **Listas que ya tienen Rev. 0:** no se tocan (las filas de `linea_base` solo se agregan).
-- **Línea base retenida.** Las listas en `config/reportes.json` → `linea_base_retenida` (`list_id` → motivo) no se
-  congelan aunque ocurra el evento. Quedan provisionales, con el titular «Programado provisional (línea base retenida:
-  motivo).» y la advertencia `linea_base_retenida`. Para liberar una lista, se borra su entrada y la Rev. 0 se congela
-  en la corrida siguiente. Hoy está retenida la PJ-2026.0225 (presupuesto contractual por confirmar contra la propuesta).
 - **Finalizados sin línea base:** siguen sin línea base (no pasan a provisional).
+
+**Estado de la curva** (`programada.estado`; columna `estado_curva` en `proyectos` y `metricas_semanales`):
+
+| estado_curva | cuándo | qué pasa |
+|---|---|---|
+| `ok` | hay presupuesto (o Rev. 0) | programada, provisional o congelada |
+| `sin_presupuesto` | presupuesto 0 y sin Rev. 0 | no se dibuja programada ni se congela; advertencia `proyecto_sin_presupuesto` para el JP (prioridad alta, va al aviso semanal) |
+| `presupuesto_incoherente` | sin Rev. 0, horas registradas (con el saldo histórico) > presupuesto | no se congela ni se dibuja programada; advertencia `presupuesto_incoherente` para el JP. Caso tipo: CMP-SHM Modelos, 22 HH contra 409 h |
+| `retenida` | lista en `config/reportes.json` → `linea_base_retenida`, sin Rev. 0 | se calcula todo (programado provisional) pero no se congela; advertencia `linea_base_retenida` |
+| `recurrente` | lista de un programa de servicio continuo (`config/programas.json`) | fuera de la curva S (sección 1b) |
+
+Retenidas hoy: PJ-2026.0225 Correa 2741 (presupuesto contractual por confirmar contra la propuesta), PJ-TEST
+(1400570000001689) y PJ-EJEMPLO (1400570000002107). Para liberar una lista, se borra su entrada y la Rev. 0 se congela
+en la corrida siguiente.
+
+## 1b. Contratos recurrentes (programas de servicio continuo)
+
+Las listas de un programa en `config/programas.json` (`programas.py`) quedan **fuera de la curva S**:
+
+- no se congela línea base ni se dibuja programada (`estado_curva = recurrente`; una Rev. 0 que ya estaba en la hoja
+  se conserva, pero no se usa);
+- la columna `programa` (en todas las tablas de hechos) lleva el id del programa: es el filtro de Looker para sacar
+  esas listas de las páginas de curva S (`programa` es nulo; `docs/looker_programas.md`);
+- se reportan por contrato y por línea en `programa_horas`, `programa_contratos` y `programa_entregables`
+  (horas por mes, consumo acumulado frente al ritmo planificado cuando la config tiene presupuesto, entregables);
+- no se emiten las advertencias de `advertencias_omitidas` (término vencido, sin término, horas fuera de plazo,
+  1.2, código duplicado, lista combinada, fase de otro proyecto, sin presupuesto contractual).
+
+Programas: **CMP-SHM** (General, Informes, Modelos, Apilador y Diagnóstico Apilador), **AITO-HPC** (PJ-2025.0321
+Extensión 2026 AITO HPC y Cartas AITO HPC) y **AITO-SOTERO** (PJ-2024.0008 AITO Hospital Sótero del Río y Cartas). Los
+dos AITO tienen un contrato cada uno, líneas «Servicio» y «Cartas», sin entregables configurados y sin presupuesto
+todavía (`_pendiente` en la config).
 
 ## 2. Fechas
 

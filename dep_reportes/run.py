@@ -31,7 +31,7 @@ from dep_clickup.naming import list_code
 from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, presentacion as PR, proyecto as P
 from . import horas as H, personas as PERS, reproceso as REP, resolucion as RES
 from . import estructura as EST, finalizados as FIN, metricas as MT, plan_semanal as PS, presupuesto as PRES
-from . import plan_vs_real as PVR, programas as PG, v2 as V2
+from . import plan_vs_real as PVR, programada as PROG, programas as PG, v2 as V2
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
 from .config_reportes import (DRY_RUN_DIR, FOLDER_PJ_INGENIERIA, FOLDER_PROYECTOS_FINALIZADOS, IMPORTADAS, RESPALDOS_DIR,
@@ -107,6 +107,8 @@ class ResultadoLista:
     programa: str = ""                  # programa de servicio continuo (programas.py) o vacio
     plan_vs_real: list = field(default_factory=list)    # filas por persona (hoja aparte; plan_vs_real.py)
     heredadas: list = field(default_factory=list)       # tareas con due anterior al inicio del proyecto
+    programada: PROG.Programada | None = None           # tareas con que se reparte la programada (programada.py)
+    estado_curva: str = PROG.OK                         # ok / sin_presupuesto / presupuesto_incoherente / retenida / recurrente
 
 
 @dataclass
@@ -167,12 +169,13 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                    umbral_admin: float = UMBRAL_HORAS_ADMINISTRACION, presupuesto_manual: float | None = None,
                    proyeccion: str = PROYECCION, situacion: FIN.Situacion = FIN.Situacion(),
                    omitir: frozenset[str] = frozenset(), entradas_ss=(),
-                   retenidas: dict[str, str] | None = None) -> ResultadoLista:
-    """situacion: en curso o finalizado. Un proyecto finalizado conserva su linea base, pero no congela una nueva
-    ni agrega filas incrementales; `corte` es el de su cierre si ya estaba congelado. omitir: tipos de advertencia
+                   retenidas: dict[str, str] | None = None, recurrente: bool = False) -> ResultadoLista:
+    """situacion: en curso o finalizado. Un proyecto finalizado conserva su linea base, pero no congela una nueva;
+    `corte` es el de su cierre si ya estaba congelado. omitir: tipos de advertencia
     que no aplican a la lista (programa de servicio continuo, programas.py). entradas_ss: entradas de tiempo de la
     tarea de la SS del proyecto (SS_REGISTRO): columna aparte, fuera de la curva S. retenidas: list_id -> motivo
-    (config "linea_base_retenida")."""
+    (config "linea_base_retenida"). recurrente: lista de un programa de servicio continuo (programas.py): fuera de la
+    curva S (sin programada ni línea base)."""
     codigo = codigo or list_code(lista.name) or lista.id
     tm_manual = a_tareas_metrica(tareas)
     horas = a_horas(entradas_lista)
@@ -185,7 +188,6 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     av = EST.avance_efectivo(tareas, clases, gastadas_t)
     calculado = (EST.PORCIONES, EST.CERRADO, EST.CONSUMO)
     tm = [replace(t, avance=av[t.id][0]) if av.get(t.id, (None, ""))[1] in calculado else t for t in tm_manual]
-    paquetes = {tid for tid, c in clases.items() if c.tipo == EST.PAQUETE}
     con_porciones = EST.porciones_de(clases)
     jp = buscar_jp(lista, miembros)
     avisos: list[P.Aviso] = []
@@ -205,16 +207,29 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
             f"Responsable \"{lista.assignee_username}\" no se encontró entre los miembros"
         avisos.append(P.Aviso(P.ADV_SIN_JP, "", det, {"responsable": lista.assignee_username}))
 
-    # Rev. 0: misma regla para todas las listas (linea_base.evento_congelar); antes, programado provisional.
-    evento = LB.evento_congelar(tareas, [h.fecha for h in horas], corte)
+    # Presupuesto y estado de la curva (programada.py): sin presupuesto, más horas que presupuesto antes de la Rev. 0 o
+    # lista de un programa de servicio continuo no congelan ni tienen programado.
+    sin_na = lambda ts: [t for t in MT.universo(ts) if not (modo.excluir_no_aplica and P.es_no_aplica(t))]
+    vig = LB.vigente(lb_exist, lista.id)
+    presupuesto_hh = MT.total_hh(sin_na(tm))
+    registradas = conteo.hh_historicas + sum(h.horas for h in horas if h.fecha <= corte)
+    estado_curva = PROG.estado(presupuesto_hh, registradas, bool(vig), lista.id in (retenidas or {}), recurrente)
+    # Rev. 0: la primera hora registrada en la lista (linea_base.evento_congelar); antes, programado provisional.
+    evento = LB.evento_congelar([h.fecha for h in horas], corte)
     dec = LB.decidir(lista.id, tareas, lb_exist, observada_antes, primera_corrida, tuple(IMPORTADAS), evento, corte,
-                     retenidas)
+                     retenidas, estado_curva)
     if situacion.finalizado:
         # Un finalizado sin línea base no pasa a provisional (queda como estaba: sin línea base).
         dec = replace(dec, accion="ninguna", estado="vigente" if dec.estado == "vigente" else "sin_linea_base")
     avisos += dec.avisos
     if dec.retenida and not situacion.finalizado:
         avisos.append(P.Aviso(P.ADV_LB_RETENIDA, "", f"Línea base retenida: {dec.retenida}", {"motivo": dec.retenida}))
+    if estado_curva == PROG.SIN_PRESUPUESTO and not situacion.finalizado:
+        avisos.append(P.Aviso(P.ADV_PROYECTO_SIN_PRESUPUESTO, "", "Ninguna tarea tiene HH Presupuestadas"))
+    if estado_curva == PROG.INCOHERENTE and not situacion.finalizado:
+        avisos.append(P.Aviso(P.ADV_PRESUPUESTO_INCOHERENTE, "", f"{registradas:.1f} h registradas frente a "
+                                                                 f"{presupuesto_hh:g} HH de presupuesto",
+                              {"presupuesto": presupuesto_hh, "gastadas": registradas}))
     if situacion.avisar:
         avisos.append(P.Aviso(P.ADV_PROYECTO_FINALIZADO, "", f"Lista en Proyectos Finalizados ({situacion.tipo_cierre})",
                               {"tipo_cierre": situacion.tipo_cierre,
@@ -230,12 +245,9 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     if dec.accion != "ninguna" and not nuevas:
         avisos.append(P.Aviso(P.ADV_LB_SIN_HH, "", f"Correspondía Rev. 0 ({dec.tipo}) pero no hay tareas con HH "
                                                    "Presupuestadas: se reintenta en el próximo corte"))
-    vig = LB.vigente(lb_exist, lista.id)
-    lb_filas = vig[1] if vig else nuevas
-    if vig and not situacion.finalizado:
-        # Paquetes creados despues de la revision vigente: se congelan al aparecer (filas incrementales).
-        inc = LB.incrementales(lista, tareas, paquetes, lb_filas, ahora, excluir_no_aplica=modo.excluir_no_aplica)
-        lb_filas, nuevas = list(lb_filas) + inc, list(nuevas) + inc
+    lb_filas = [] if recurrente else vig[1] if vig else nuevas
+    if lb_filas and vig and not situacion.finalizado:
+        # Las tareas nuevas no se agregan a la línea base vigente (se ven como desvío); las que desaparecen se avisan.
         desap = LB.desaparecidos(lb_filas, tareas)
         if desap:
             avisos.append(P.Aviso(P.ADV_PAQUETE_DESAPARECIDO, "", f"{len(desap)} tarea(s) de la línea base ya no están "
@@ -246,10 +258,21 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
         avisos.append(P.Aviso(P.ADV_LB_TARDIA, "", f"Rev. 0 tardía: congelada el {lb_filas[0].fecha_captura:%Y-%m-%d} "
                                                    "con la foto de ese día (el proyecto ya había empezado)",
                               {"fecha": lb_filas[0].fecha_captura}))
-    lb_tareas, fase_lb = LB.a_tareas(lb_filas) if lb_filas else (None, {})
-    if not lb_filas and dec.estado == LB.PROVISIONAL:
-        # Sin Rev. 0: programado PROVISIONAL con las HH y fechas vigentes (no se guarda).
-        lb_tareas = [t for t in MT.universo(tm) if not (modo.excluir_no_aplica and P.es_no_aplica(t))]
+    # Programada (programada.programar): cada tarea del presupuesto entre sus fechas; si no tiene fechas válidas dentro
+    # del plazo de la lista, en todo el plazo. Con Rev. 0, desde lo congelado; sin ella, PROVISIONAL con las HH y fechas
+    # vigentes (no se guarda).
+    fase_lb = {f.task_id: f.fase for f in lb_filas}
+    if lb_filas:
+        progr = LB.programada(lb_filas, modo.cal)
+    elif dec.estado == LB.PROVISIONAL:
+        progr = PROG.programar(sin_na(tm), lista.start.date() if lista.start else None,
+                               lista.due.date() if lista.due else None, modo.cal)
+    else:
+        progr = None
+    lb_tareas = progr.tareas if progr else None
+    for x in progr.respaldo if progr else []:
+        avisos.append(P.Aviso(P.ADV_FECHAS_FUERA_DE_LISTA, x.task_id, f"\"{x.nombre}\" ({x.motivo})",
+                              {"motivo": x.motivo, "hh": x.hh}))
 
     fin = lista.due.date() if lista.due else None
     plan = EST.plan_porciones(tareas, clases)
@@ -341,6 +364,7 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                        P.para_hoja(adv, con_hh), adv, clases, {k: o for k, (_, o) in av.items()}, pres, filas_ps,
                        extra, situacion)
     r.plan_vs_real, r.heredadas = pvr, [t.id for t in heredadas]
+    r.programada, r.estado_curva = progr, estado_curva
     return r
 
 
@@ -454,6 +478,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
     es_ext, dias_ext = PR.extension_plazo(contractual, vigente, modo.cal)
     plazo = {"fecha_entrega_contractual": contractual, "es_extension": es_ext, "dias_extension": dias_ext,
              "entrega_texto": PR.entrega_texto(vigente)}
+    curva = {"estado_curva": r.estado_curva, "programada_modo": r.programada.modo if r.programada else None}
     out: dict[str, list[dict]] = defaultdict(list)
     out["proyectos"].append({
         "list_id": lid, "nombre": r.lista.name, **idn,
@@ -462,7 +487,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
         "fecha_termino_vigente": r.lista.due.date() if r.lista.due else None,
         "estado_linea_base": "vigente" if r.lb_filas else LB.PROVISIONAL if prov else "sin_linea_base",
         "rev_vigente": rev, "actualizado_en": ahora,
-        "estado_proyecto": r.situacion.estado, "corte_cierre": r.situacion.corte_cierre, **plazo,
+        "estado_proyecto": r.situacion.estado, "corte_cierre": r.situacion.corte_cierre, **plazo, **curva,
     })
     tc = {"corte": corte, "tipo_corte": tipo_corte}
     sit = r.situacion
@@ -489,7 +514,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
                "hh_estimadas_termino_plan_semanal": r.extra.get("hh_estimadas_plan_semanal"),
                "fecha_termino_usada": mt.get("fecha_termino_usada"),
                "dias_habiles_para_entrega": PR.dias_habiles_para_entrega(
-                   corte, r.lista.due.date() if r.lista.due else None, modo.cal), **plazo}
+                   corte, r.lista.due.date() if r.lista.due else None, modo.cal), **plazo, **curva}
     motivo = None if (r.lb_filas or prov) else PR.motivo_sin_linea_base(a["tipo"] for a in r.advertencias_todas)
     out["metricas_semanales"].append(semanal | PR.derivadas_semanales(semanal, motivo, r.decision.retenida,
                                                                       PR.nota_congelada(r.lb_nuevas)))
@@ -645,7 +670,7 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
                            presupuesto_manual=presupuestos_manuales.get(asig.codigos[lista.id]),
                            situacion=sit, omitir=prog.advertencias_omitidas if prog else frozenset(),
                            entradas_ss=[e for e in ss_por_codigo.get(base, []) if e.date <= corte_l]
-                           if base and unica else [], retenidas=retenidas)
+                           if base and unica else [], retenidas=retenidas, recurrente=prog is not None)
         r.programa = prog.id if prog else ""
         corrida.listas.append(r)
     corrida.segundos_clickup = time.monotonic() - t0
@@ -848,7 +873,11 @@ def _escribir_resumen(c: Corrida, ruta) -> None:
             "avance_real_efectivo": r.resultado.metricas.get("avance_real"),
             "hh_estimadas_uniforme": r.extra.get("hh_estimadas_uniforme"),
             "hh_estimadas_plan_semanal": r.extra.get("hh_estimadas_plan_semanal"),
-            "lb_incrementales": [f.task_nombre for f in r.lb_nuevas if f.tipo == "incremental"],
+            "estado_curva": r.estado_curva,
+            "programada_modo": r.programada.modo if r.programada else None,
+            "presupuesto_hh": r.programada.presupuesto if r.programada else None,
+            "respaldo": [{"task_id": x.task_id, "nombre": x.nombre, "hh": x.hh, "start": x.start, "due": x.due,
+                          "motivo": x.motivo} for x in (r.programada.respaldo if r.programada else [])],
             "cumplimiento_8_semanas": PS.por_agregar({"x": r.plan_semanal})["x"],
             "presupuesto": r.presupuesto} for r in c.listas},
         "saldo_historico": {r.codigo: {"corte_historico": str(c.conteos[r.lista.id].corte_historico),
@@ -922,7 +951,9 @@ def imprimir(c: Corrida, dry_run: bool) -> None:
         lb = f"{r.lb_filas[0].tipo} rev {r.lb_filas[0].rev}" if r.lb_filas else             (("provisional (retenida)" if r.decision.retenida else "provisional") if provisional(r) else "sin línea base")
         est = "" if not r.situacion.finalizado else f"  [finalizado: {r.situacion.tipo_cierre}" + (
             f", congelado al {r.situacion.corte_cierre}]" if r.situacion.congelado else "]")
-        print(f"  {r.codigo:<20} JP={r.jp.username if r.jp else SIN_JP:<28} LB={lb:<22} avance prog={_f(m['avance_prog'])} real={_f(m['avance_real'])}{est}")
+        curva = f"{r.estado_curva}/{r.programada.modo}" if r.programada else r.estado_curva
+        print(f"  {r.codigo:<20} JP={r.jp.username if r.jp else SIN_JP:<28} LB={lb:<22} curva={curva:<16} "
+              f"avance prog={_f(m['avance_prog'])} real={_f(m['avance_real'])}{est}")
     for pid, s in c.programas.items():
         print(f"  Programa {pid}: consumo por contrato {s['consumo_por_contrato']} h; compartidas {s['horas_compartidas']} h; "
               f"por línea {s['horas_por_linea']} h; solo consumo {s['horas_solo_consumo']} h; entregables {s['entregables']}; "

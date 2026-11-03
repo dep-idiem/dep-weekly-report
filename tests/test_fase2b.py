@@ -75,11 +75,6 @@ def test_toda_tarea_con_hh_es_paquete_incluso_de_nivel_0():
     assert (c["f"].tipo, c["f"].es_fase) == (EST.PAQUETE, True)
     assert (c["g"].tipo, c["g"].recurrente, c["g"].es_fase) == (EST.PAQUETE, True, True)
     rev0 = LB.congelar(LISTA, ts[:1], 0, "normal", "Rev. 0", dt.datetime(2026, 8, 1, tzinfo=TZ))
-    base = LB.congelar(LISTA, [ts[2]], 0, "normal", "Rev. 0", dt.datetime(2026, 7, 1, tzinfo=TZ))
-    nueva = T("n", "08 Extra", hh=10, s=D(2026, 10, 1), d=D(2026, 10, 9), creada=D(2026, 9, 1))
-    paq = {k for k, x in EST.clasificar(ts + [nueva]).items() if x.tipo == EST.PAQUETE}
-    inc = LB.incrementales(LISTA, ts + [nueva], paq, base, dt.datetime(2026, 9, 2, tzinfo=TZ))
-    assert [f.task_id for f in inc] == ["n"]                      # «06 Informe Final» espera fechas
     assert rev0 == []                                             # 00 Administración no entra al universo
 
 
@@ -124,38 +119,33 @@ def test_presupuesto_ritmo_y_titular():
     assert PRES.avisos(PRES.metricas(None, 100, horas, corte))[0].tipo == P.ADV_SIN_PRESUPUESTO
 
 
-# --- 3. Linea base incremental ------------------------------------------------------------------------------------
+# --- 3. Tareas nuevas despues de la Rev. 0 ----------------------------------------------------------------------
+# Desde el 2026-11-03 (TAREA_curva_programada_unica) no se agregan a la linea base: se ven como desvio.
 
 LISTA = ListInfo("L", "PJ-2026.0001 | Proyecto | Cliente", None, False, None, None, None, None, None, None, None)
 
 
-def test_paquete_nuevo_se_congela_sin_advertencia_y_cambio_de_hh_si_advierte():
+def test_tarea_nueva_no_cambia_la_linea_base_y_cambio_de_hh_si_advierte():
     t0 = dt.datetime(2026, 8, 1, 12, tzinfo=TZ)
     base = [T("f", "05 Ing", creada=D(2026, 7, 1)),
             T("a", "5.1 Diseño", "f", hh=40, s=D(2026, 8, 3), d=D(2026, 8, 14), creada=D(2026, 7, 1))]
     rev0 = LB.congelar(LISTA, base, 0, "normal", "Rev. 0", t0)
     nuevo = T("n", "Apoyo Asesoría Oct 2026", "f", hh=20, s=D(2026, 10, 1), d=D(2026, 10, 30), creada=D(2026, 9, 1))
     ts = base + [nuevo]
-    paquetes = {k for k, c in EST.clasificar(ts).items() if c.tipo == EST.PAQUETE}
-    inc = LB.incrementales(LISTA, ts, paquetes, rev0, dt.datetime(2026, 9, 2, tzinfo=TZ))
-    assert [(f.task_id, f.rev, f.tipo, f.hh) for f in inc] == [("n", 0, "incremental", 20.0)]
-    assert LB.incrementales(LISTA, ts, paquetes, rev0 + inc, dt.datetime(2026, 9, 3, tzinfo=TZ)) == []   # idempotente
+    assert not hasattr(LB, "incrementales")
     modo, corte = por_nombre("dep"), D(2026, 9, 20)
-    lb0, _ = LB.a_tareas(rev0)
-    lb1, _ = LB.a_tareas(rev0 + inc)
-    r0 = P.calcular(lb0, a_tareas_metrica(base), [], corte, D(2026, 10, 30), modo)
+    lb1, _ = LB.a_tareas(rev0)
+    r0 = P.calcular(lb1, a_tareas_metrica(base), [], corte, D(2026, 10, 30), modo)
     r1 = P.calcular(lb1, a_tareas_metrica(ts), [], corte, D(2026, 10, 30), modo)
-    assert r1.metricas["total_hh"] == r0.metricas["total_hh"] + 20                  # la curva programada crece
+    assert r1.metricas["total_hh"] == r0.metricas["total_hh"] == 40                 # la programada no cambia
+    assert r1.metricas["hh_actuales_clickup"] == 60                                 # la tarea nueva es desvío
     assert not any(a.tipo == P.ADV_HH_CAMBIARON for a in r1.avisos)
     cambiado = [T("a", "5.1 Diseño", "f", hh=55, s=D(2026, 8, 3), d=D(2026, 8, 14)), nuevo, base[0]]
     r2 = P.calcular(lb1, a_tareas_metrica(cambiado), [], corte, D(2026, 10, 30), modo)
     av = [a for a in r2.avisos if a.tipo == P.ADV_HH_CAMBIARON]
     assert len(av) == 1 and av[0].datos == {"n": 1, "actual": 55.0, "linea_base": 40.0}
-    # Tarea antigua sin fechas o creada antes de la Rev. 0: no se congela como incremental
-    vieja = T("v", "5.2 Vieja", "f", hh=10, s=D(2026, 8, 3), d=D(2026, 8, 7), creada=D(2026, 7, 1))
-    assert [f.task_id for f in LB.incrementales(LISTA, ts + [vieja], paquetes | {"v"}, rev0, t0)] == ["n"]
     # Paquete desaparecido
-    assert [f.task_id for f in LB.desaparecidos(rev0 + inc, [base[0], nuevo])] == ["a"]
+    assert [f.task_id for f in LB.desaparecidos(rev0, [base[0], nuevo])] == ["a"]
 
 
 def test_controles_aceptan_filas_incrementales():

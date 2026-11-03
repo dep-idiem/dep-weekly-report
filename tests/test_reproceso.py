@@ -134,7 +134,9 @@ FOTOS = [foto("f", None, D(2026, 9, 1), D(2026, 10, 9), 0.0, 0.0, parent=""),
 def fila_guardada(**kw):
     tm = [T(f["task_id"], f["start"], f["due"], f["hh"], f["avance_real"], f["parent_id"] or None, f["estado"]) for f in FOTOS]
     horas = [Horas(D(2026, 9, 10), 30.0, "a"), Horas(D(2026, 9, 24), 12.5, "b")]
-    lb_t, fase_lb = LB.a_tareas(LB_ROWS)
+    # La corrida en vivo reparte la programada con la regla de programada.py: «b» vence despues del termino guardado
+    # (02-10) y cae al plazo de la lista.
+    lb_t, fase_lb = LB.programada(LB_ROWS, DEP.cal).tareas, {f.task_id: f.fase for f in LB_ROWS}
     r = P.calcular(lb_t, tm, horas, CORTE, D(2026, 10, 9), DEP, fase_lb, hh_historicas=5.0, entrega=D(2026, 10, 9))
     fila = {"corte": CORTE, "tipo_corte": "oficial", "list_id": "L1", "codigo": "PJ-1", "rev_linea_base": 0,
             "modo_calculo": "dep", **{c: r.metricas.get(c) for c, _ in E.METRICAS}, "hh_contrato": 300.0,
