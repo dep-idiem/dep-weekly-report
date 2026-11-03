@@ -3,16 +3,16 @@
 Definiciones en `docs/definiciones_reporte.md` (secciones 1 y 1b). Dry-run del corte preliminar del 03-11-2026 y
 comparación con el código anterior en `reportes/curva_unica/`.
 
-**Depende de los commits locales sin push** (main local = origin/main + los commits del 02-11, incluido 643595e «línea
-base única, plan vs real por persona»). Se despliegan juntos. Hasta entonces, no correr el worker ni una preliminar
-con escritura.
+Se sube junto con «línea base única, plan vs real por persona» (643595e), sin su parte de `pj_create`, que sigue en
+el main local con el resto de los commits sin push (pj_create, intake, complemento de Gmail, A1, auditorías). Ese
+commit agrega `SHEETS_PLAN_VS_REAL_ID` al job de reportes de `.github/workflows/reportes.yml`.
 
 ## Qué cambia en la hoja «DEP - Reportes»
 
 | Pestaña | Cambio |
 |---|---|
-| `proyectos` | 2 columnas nuevas al final: `estado_curva` (ok / sin_presupuesto / presupuesto_incoherente / retenida / recurrente) y `programada_modo` (tareas / mixta / lineal; vacío sin programada) |
-| `metricas_semanales` | las mismas 2 columnas al final. En cortes anteriores quedan vacías |
+| `proyectos` | 4 columnas nuevas al final: `estado_curva` (ok / sin_presupuesto / presupuesto_incoherente / retenida / recurrente), `programada_modo` (tareas / mixta / lineal; vacío sin programada), `ritmo_real` (h/semana, 2 últimas semanas cerradas) y `semanas_desfase` (HH pendientes / ritmo − semanas hasta el término contractual) |
+| `metricas_semanales` | `estado_curva` y `programada_modo` al final. En cortes anteriores quedan vacías |
 | `advertencias` | tipos nuevos: `proyecto_sin_presupuesto` (proyecto, JP, alta), `presupuesto_incoherente` (proyecto, JP, alta), `fechas_fuera_de_lista` (tarea, JP). En el dry-run: 4, 0 y 46 |
 | `linea_base` | sin columnas nuevas. No se agregan más filas `incremental`. En la primera corrida se congelan la 0271 (291 HH) y la 0272 (130 HH), las dos `normal` por su primera hora registrada; la 0147 y la 0221 ya **no** se congelan (no tienen horas: antes las congelaba la primera porción), y CMP-SHM Modelos tampoco (es recurrente) |
 | `serie_diaria`, `metricas_fase` | la programada cambia donde hay tareas al respaldo (tabla del dry-run) |
@@ -31,7 +31,7 @@ respaldo.
 
 ## Qué hacer en Looker Studio
 
-1. Fuentes `proyectos` y `metricas_semanales`: **Actualizar campos** (aparecen `estado_curva` y `programada_modo`).
+1. Fuentes `proyectos` y `metricas_semanales`: **Actualizar campos** (aparecen `estado_curva` y `programada_modo`; en `proyectos`, también `ritmo_real` y `semanas_desfase`).
 2. Páginas de curva S: el filtro `programa` es nulo ya existe; con él, las listas AITO salen de esas páginas como las
    de CMP-SHM. Sugerido: un control de `estado_curva` y la columna `programada_modo` en la tabla de proyectos (una
    `mixta` o `lineal` indica fechas para corregir).

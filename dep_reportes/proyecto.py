@@ -278,6 +278,7 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
         "hh_estimadas_a_entrega": a_entrega,
         "hh_actuales_clickup": tot_act,
         "fecha_termino_usada": fin,
+        "hh_pendientes": sum(pend_diario.values()),     # (1 - avance) x HH del universo actual; no va a la hoja
     }
 
     # Serie diaria

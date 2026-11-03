@@ -72,6 +72,18 @@ Retenidas hoy: PJ-2026.0225 Correa 2741 (presupuesto contractual por confirmar c
 (1400570000001689) y PJ-EJEMPLO (1400570000002107). Para liberar una lista, se borra su entrada y la Rev. 0 se congela
 en la corrida siguiente.
 
+**Ritmo y desfase** (solo en `proyectos`, foto del último corte):
+
+- `ritmo_real` (`presupuesto.ritmo_real`): promedio semanal de las horas registradas en la lista PJ en las **2 últimas
+  semanas cerradas** (lunes a domingo, con el domingo en el corte o antes: en un corte de domingo cuenta su propia
+  semana; en una preliminar de martes, las dos anteriores). Solo horas nativas que cuenta el reporte (sin la tarea de la
+  SS ni el saldo del Timetracker).
+- `semanas_desfase` (`presentacion.semanas_desfase`): HH pendientes / `ritmo_real` − semanas hasta el término
+  contractual (`fecha_entrega_contractual`; días hábiles para la entrega / 5, negativas si ya venció). HH pendientes =
+  Σ (1 − avance real) × HH de las tareas del presupuesto (las mismas que reparte la proyección). Positivo: a este ritmo
+  el proyecto termina esas semanas después del plazo; negativo: le sobran. Vacío si no hay ritmo (0 h en las dos
+  semanas), si no hay término contractual o si el proyecto no tiene curva (`sin_presupuesto`, `recurrente`).
+
 ## 1b. Contratos recurrentes (programas de servicio continuo)
 
 Las listas de un programa en `config/programas.json` (`programas.py`) quedan **fuera de la curva S**:

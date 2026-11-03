@@ -42,6 +42,9 @@ PLAZO = [("fecha_entrega_contractual", FECHA), ("es_extension", BOOLEANO), ("dia
 # Curva programada única (programada.py, 2026-11-03): estado_curva ok / sin_presupuesto / presupuesto_incoherente /
 # retenida / recurrente; programada_modo tareas / mixta / lineal (vacío si no hay programada).
 CURVA = [("estado_curva", TEXTO), ("programada_modo", TEXTO)]
+# Ritmo (presupuesto.ritmo_real, presentacion.semanas_desfase), solo en proyectos: ritmo_real = horas por semana en las 2
+# ultimas semanas cerradas; semanas_desfase = HH pendientes / ritmo_real - semanas hasta el termino contractual.
+RITMO = [("ritmo_real", NUMERO), ("semanas_desfase", NUMERO)]
 
 TABLAS: dict[str, list[tuple[str, str]]] = {
     # Plazo (presentacion.extension_plazo): entrega contractual de la linea base vigente frente al termino vigente de la
@@ -50,7 +53,7 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                   ("jp_email", TEXTO),
                   ("estado_lista", TEXTO), ("fecha_inicio", FECHA), ("fecha_termino_vigente", FECHA),
                   ("estado_linea_base", TEXTO), ("rev_vigente", ENTERO), ("actualizado_en", FECHA_HORA)]
-                 + ESTADO + [("corte_cierre", FECHA)] + PROGRAMA + PLAZO + CURVA,
+                 + ESTADO + [("corte_cierre", FECHA)] + PROGRAMA + PLAZO + CURVA + RITMO,
     "linea_base": [("list_id", TEXTO), ("rev", ENTERO), ("tipo", TEXTO), ("fecha_captura", FECHA_HORA), ("motivo", TEXTO),
                    ("fecha_inicio", FECHA), ("fecha_entrega_contractual", FECHA), ("task_id", TEXTO),
                    ("task_nombre", TEXTO), ("fase", TEXTO), ("hh", NUMERO), ("start", FECHA), ("due", FECHA)],

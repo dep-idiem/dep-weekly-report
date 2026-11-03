@@ -16,6 +16,7 @@ from .metricas import Horas
 from .proyecto import ADV_PRESUPUESTO_POR_AGOTARSE, ADV_SIN_PRESUPUESTO, Aviso
 
 SEMANAS_RITMO = 4
+SEMANAS_RITMO_REAL = 2          # proyectos.ritmo_real: ultimas semanas cerradas
 SEMANAS_ALERTA = 4
 
 
@@ -44,6 +45,19 @@ def metricas(contrato: float | None, gastadas: float | None, horas: Sequence[Hor
             if sem > 0:
                 out["fecha_agotamiento_estimada"] = corte + dt.timedelta(days=round(sem * 7))
     return out
+
+
+def ultimo_domingo(corte: dt.date) -> dt.date:
+    """Domingo de la ultima semana cerrada (lunes a domingo) hasta el corte: el corte mismo si es domingo."""
+    return corte - dt.timedelta(days=(corte.weekday() + 1) % 7)
+
+
+def ritmo_real(horas: Sequence[Horas], corte: dt.date, semanas: int = SEMANAS_RITMO_REAL) -> float:
+    """Promedio semanal de las horas registradas en la lista en las `semanas` ultimas semanas cerradas antes del corte
+    (lunes a domingo con el domingo <= corte). Solo las horas nativas que cuenta el reporte (sin la tarea de la SS)."""
+    fin = ultimo_domingo(corte)
+    desde = fin - dt.timedelta(days=7 * semanas - 1)
+    return sum(h.horas for h in horas if desde <= h.fecha <= fin) / semanas
 
 
 def avisos(m: dict, alerta_semanas: float = SEMANAS_ALERTA, v2: bool = False) -> list[Aviso]:

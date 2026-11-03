@@ -185,3 +185,39 @@ def test_reproceso_usa_la_misma_programada_que_la_corrida():
     nueva, _ = REP.recalcular(CORTE, fs["metricas_semanales"][0], fs["fotos_tareas"], lb, DEP)
     assert nueva["hh_prog_acum"] == r.resultado.metricas["hh_prog_acum"]
     assert nueva["avance_prog"] == r.resultado.metricas["avance_prog"]
+
+
+# --- proyectos.ritmo_real y semanas_desfase ----------------------------------------------------------------------
+
+def test_ritmo_real_promedia_las_dos_ultimas_semanas_cerradas():
+    from dep_reportes import presupuesto as PRES
+    from dep_reportes.metricas import Horas
+    horas = [Horas(D(2026, 10, 12), 10), Horas(D(2026, 10, 19), 6), Horas(D(2026, 10, 25), 4),   # semana 19-25
+             Horas(D(2026, 10, 26), 20), Horas(D(2026, 11, 1), 10), Horas(D(2026, 11, 3), 99)]
+    assert PRES.ritmo_real(horas, D(2026, 11, 1)) == (10 + 30) / 2      # domingo: su semana ya está cerrada
+    assert PRES.ritmo_real(horas, D(2026, 11, 3)) == (10 + 30) / 2      # martes: la semana en curso no cuenta
+    assert PRES.ritmo_real(horas, D(2026, 10, 31)) == (10 + 10) / 2     # sábado: cuentan 12-18 y 19-25
+    assert PRES.ritmo_real([], D(2026, 11, 1)) == 0
+
+
+def test_semanas_desfase():
+    from dep_reportes import presentacion as PR
+    corte, fin = D(2026, 11, 1), D(2026, 11, 13)                      # 10 días hábiles = 2 semanas
+    assert PR.semanas_desfase(60, 20, corte, fin, SIN_FERIADOS) == 1.0   # 3 semanas al ritmo, quedan 2
+    assert PR.semanas_desfase(20, 20, corte, fin, SIN_FERIADOS) == -1.0  # sobra una semana
+    assert PR.semanas_desfase(60, 0, corte, fin, SIN_FERIADOS) is None   # sin ritmo
+    assert PR.semanas_desfase(60, 20, corte, None, SIN_FERIADOS) is None
+    assert PR.semanas_desfase(10, 10, corte, D(2026, 10, 26), SIN_FERIADOS) == 1 + 5 / 5   # vencido hace 5 hábiles
+
+
+def test_ritmo_y_desfase_en_proyectos():
+    entradas = [_e("1", "a", "Ana", D(2026, 10, 20), 8), _e("2", "a", "Ana", D(2026, 10, 27), 12)]
+    r = _procesar(_tareas(), entradas)
+    p = run.filas_de(r, CORTE, DEP, AHORA)["proyectos"][0]
+    assert p["ritmo_real"] == 10
+    pend = r.resultado.metricas["hh_pendientes"]
+    assert pend == 50                                                # sin avance real: todo el presupuesto
+    habiles = DEP.cal.networkdays(D(2026, 11, 2), D(2026, 11, 27))
+    assert p["semanas_desfase"] == pend / 10 - habiles / 5
+    sin = run.filas_de(_procesar([_t("f", "05 Ingeniería")], entradas), CORTE, DEP, AHORA)["proyectos"][0]
+    assert sin["ritmo_real"] == 10 and sin["semanas_desfase"] is None    # sin presupuesto: sin desfase

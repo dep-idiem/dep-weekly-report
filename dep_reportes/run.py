@@ -479,6 +479,10 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
     plazo = {"fecha_entrega_contractual": contractual, "es_extension": es_ext, "dias_extension": dias_ext,
              "entrega_texto": PR.entrega_texto(vigente)}
     curva = {"estado_curva": r.estado_curva, "programada_modo": r.programada.modo if r.programada else None}
+    # Ritmo de las 2 ultimas semanas cerradas y desfase frente al termino contractual (sin curva: sin desfase).
+    ritmo = PRES.ritmo_real(r.horas, corte)
+    con_curva = r.estado_curva not in (PROG.SIN_PRESUPUESTO, PROG.RECURRENTE)
+    desfase = PR.semanas_desfase(mt.get("hh_pendientes") if con_curva else None, ritmo, corte, contractual, modo.cal)
     out: dict[str, list[dict]] = defaultdict(list)
     out["proyectos"].append({
         "list_id": lid, "nombre": r.lista.name, **idn,
@@ -488,6 +492,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
         "estado_linea_base": "vigente" if r.lb_filas else LB.PROVISIONAL if prov else "sin_linea_base",
         "rev_vigente": rev, "actualizado_en": ahora,
         "estado_proyecto": r.situacion.estado, "corte_cierre": r.situacion.corte_cierre, **plazo, **curva,
+        "ritmo_real": ritmo, "semanas_desfase": desfase,
     })
     tc = {"corte": corte, "tipo_corte": tipo_corte}
     sit = r.situacion

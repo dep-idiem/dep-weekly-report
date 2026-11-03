@@ -195,6 +195,16 @@ def dias_habiles_para_entrega(corte: dt.date, entrega: dt.date | None, cal) -> i
 
 
 
+def semanas_desfase(pendientes: float | None, ritmo: float | None, corte: dt.date, contractual: dt.date | None,
+                    cal) -> float | None:
+    """Semanas que faltan al ritmo real (pendientes / ritmo) menos las semanas que quedan hasta el termino contractual
+    (dias habiles para la entrega / 5; negativas si ya vencio). Positivo: el proyecto termina despues del plazo a este
+    ritmo. Vacio sin ritmo (0 o sin horas), sin pendientes o sin termino contractual."""
+    if not ritmo or ritmo <= 0 or pendientes is None or contractual is None:
+        return None
+    return pendientes / ritmo - dias_habiles_para_entrega(corte, contractual, cal) / 5
+
+
 def extension_plazo(contractual: dt.date | None, vigente: dt.date | None, cal) -> tuple[bool | None, int | None]:
     """(es_extension, dias_extension) del termino vigente (vencimiento de la lista en ClickUp) frente a la entrega
     contractual de la linea base, en dias habiles del calendario del modo.
