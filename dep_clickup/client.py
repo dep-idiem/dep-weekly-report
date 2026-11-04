@@ -254,7 +254,15 @@ def parse_task(t: dict, list_id: str = "") -> Task:
         date_created=ms_to_local(t.get("date_created")),
         date_done=ms_to_local(t.get("date_done") or t.get("date_closed")),
         tags=tuple((g.get("name") or "").strip() for g in t.get("tags") or [] if isinstance(g, dict)),
+        **_checklist(t),
     )
+
+
+def _checklist(t: dict) -> dict:
+    """Ítems de los checklists de la tarea (el listado de tareas los trae con su estado `resolved`)."""
+    items = [i for c in t.get("checklists") or [] if isinstance(c, dict) for i in c.get("items") or []
+             if isinstance(i, dict)]
+    return {"checklist_total": len(items), "checklist_resueltos": sum(1 for i in items if i.get("resolved"))}
 
 
 def parse_time_entry(e: dict) -> TimeEntry | None:

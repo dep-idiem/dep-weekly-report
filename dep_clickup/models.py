@@ -70,6 +70,8 @@ class Task:
     date_created: dt.datetime | None = None
     date_done: dt.datetime | None = None    # cuando paso a un estado cerrado (date_done o date_closed de la API)
     tags: tuple[str, ...] = ()              # nombres de las etiquetas de la tarea
+    checklist_total: int = 0                # ítems de todos sus checklists
+    checklist_resueltos: int = 0            # ítems marcados
 
     @property
     def cerrada(self) -> bool:

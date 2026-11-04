@@ -62,6 +62,8 @@ ADV_PROYECTO_SIN_PRESUPUESTO = "proyecto_sin_presupuesto"   # ninguna tarea con 
 ADV_PRESUPUESTO_INCOHERENTE = "presupuesto_incoherente"     # horas registradas > presupuesto antes de la Rev. 0
 ADV_FECHAS_FUERA_DE_LISTA = "fechas_fuera_de_lista"         # tarea del presupuesto repartida en el plazo de la lista
 ADV_INICIO_ANTERIOR = "inicio_anterior_contractual"         # inicio hasta 30 días antes de la lista: usa sus fechas
+# TAREA_avance_fisico (2026-11-04): avance.py
+ADV_PORCION_VENCIDA = "porcion_vencida_abierta"             # porción vencida, abierta y con >= 50 % de sus horas
 # Programas de servicio continuo (programas.py): para Administracion DEP
 ADV_PROGRAMA_COMPARTIDAS = "programa_horas_compartidas"      # nivel programa (sin lista)
 ADV_ENTREGABLE_PLANTILLA = "entregable_plantilla_sin_usar"
@@ -81,7 +83,7 @@ NIVEL_PROYECTO = {
     "hh_en_padre_y_subtarea",   # doble conteo (calidad.DOBLE_CONTEO)
 }
 # De nivel tarea, pero se escriben aunque la tarea no tenga HH Presupuestadas.
-SIEMPRE_EN_HOJA = NIVEL_PROYECTO | {ADV_HORAS_EN_PADRE}
+SIEMPRE_EN_HOJA = NIVEL_PROYECTO | {ADV_HORAS_EN_PADRE, ADV_PORCION_VENCIDA}
 # Solo en calidad_datos.md, nunca en la hoja: HH Presupuestadas distintas del time estimate (o sin el).
 SOLO_CALIDAD = {"hh_distinta_de_time_estimate"}
 
@@ -278,6 +280,8 @@ def calcular(lb: Sequence[TareaMetrica] | None, actuales: Sequence[TareaMetrica]
         "hh_estimadas_al_termino": estimadas,
         "hh_estimadas_a_entrega": a_entrega,
         "hh_actuales_clickup": tot_act,
+        # consumo (TAREA_avance_fisico): horas gastadas / HH totales; indicador aparte, no entra en el avance
+        "consumo_pct": gastadas_total / total if total else None,
         "fecha_termino_usada": fin,
         "hh_pendientes": sum(pend_diario.values()),     # (1 - avance) x HH del universo actual; no va a la hoja
     }

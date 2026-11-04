@@ -1,6 +1,7 @@
 # Definiciones del reporte semanal DEP
 
-Vigentes desde el 2026-11-03 (TAREA_curva_programada_unica.md: un solo modo de curva S para todas las listas PJ,
+Avance físico vigente desde el 2026-11-04 (TAREA_avance_fisico.md, sección 1c). El resto, vigente desde el
+2026-11-03 (TAREA_curva_programada_unica.md: un solo modo de curva S para todas las listas PJ,
 antiguas y v2) y, en lo que esa tarea no cambia, desde el 2026-11-02 (TAREA_reportes_plan_vs_real.md). Código en
 `dep_reportes/`; entre paréntesis, la función que implementa cada regla. Lo único que se considera confiable en todas
 las listas son las **fechas de la lista** y las **horas registradas**; solo se leen datos de ClickUp.
@@ -87,10 +88,10 @@ en la corrida siguiente.
   SS ni el saldo del Timetracker).
 - `semanas_desfase` (`presentacion.semanas_desfase`): HH pendientes / `ritmo_real` − semanas hasta el término
   contractual (`fecha_entrega_contractual`; días hábiles para la entrega / 5, negativas si ya venció). HH pendientes =
-  Σ (1 − avance real) × HH de las tareas del presupuesto (las mismas que reparte la proyección). Positivo: a este ritmo
+  Σ (1 − avance físico) × HH de las tareas del presupuesto (las mismas que reparte la proyección). Positivo: a este ritmo
   el proyecto termina esas semanas después del plazo; negativo: le sobran. Vacío si no hay ritmo (0 h en las dos
   semanas), si no hay término contractual o si el proyecto no tiene curva (`sin_presupuesto`, `recurrente`).
-- `hh_pendientes`: las HH pendientes de arriba (Σ (1 − avance real) × HH del presupuesto). Vacío si el proyecto no
+- `hh_pendientes`: las HH pendientes de arriba (Σ (1 − avance físico) × HH del presupuesto). Vacío si el proyecto no
   tiene curva.
 - `horas_necesarias_semana` (`presentacion.horas_necesarias_semana`): HH pendientes / semanas hasta el término
   contractual (días hábiles para la entrega / 5). Es el ritmo que haría falta para terminar en plazo; se compara con
@@ -125,6 +126,56 @@ Programas: **CMP-SHM** (General, Informes, Modelos, Apilador y Diagnóstico Apil
 Extensión 2026 AITO HPC y Cartas AITO HPC) y **AITO-SOTERO** (PJ-2024.0008 AITO Hospital Sótero del Río y Cartas). Los
 dos AITO tienen un contrato cada uno, líneas «Servicio» y «Cartas», sin entregables configurados y sin presupuesto
 todavía (`_pendiente` en la config).
+
+## 1c. Avance físico (desde el 2026-11-04)
+
+El avance ya **no se lee del campo manual «Avance Real»** (`manual_progress`) ni de «Avance Acumulado» (fórmula) ni de
+«% Avance»: se calcula desde el estado de las tareas (`avance.py`). Por cada tarea que aporta presupuesto (sección 1),
+en este orden:
+
+| avance_fisico_modo | cuándo | avance de la tarea |
+|---|---|---|
+| `cerrada` | la tarea está en un estado de tipo done/closed | 100 % |
+| `porciones` | abierta y con porciones: descendientes de **cualquier nivel** con `time_estimate` | Σ `time_estimate` de las porciones cerradas ÷ Σ `time_estimate` de todas |
+| `checklist` | abierta, sin porciones y con checklists propios | ítems marcados ÷ ítems totales |
+| `consumo` | abierta, sin porciones ni checklists | horas registradas en ella y sus descendientes ÷ HH, con tope 90 % (respaldo) |
+
+- Las porciones en **No Aplica** o **cancelado/cancelada** (y lo que cuelga de ellas) no entran al denominador. Si
+  todas lo están, la tarea pasa al checklist o al consumo.
+- Si una porción tiene a su vez descendientes con `time_estimate`, cuentan esos y no ella (no se suma dos veces).
+- **Proyecto** = Σ (avance de la tarea × HH) ÷ Σ HH, sobre las mismas tareas que la curva S (sin las tareas en No
+  Aplica). Lo mismo por fase en `metricas_fase`. `avance_fisico_modo` del proyecto (o de la fase) = el modo de sus
+  tareas **abiertas** si es uno solo; `mixto` si hay varios; `cerrada` si todas están cerradas.
+- El avance físico es el que usan EV, SPI, CPI, las HH pendientes (proyección, desfase, horas necesarias, término
+  estimado), el semáforo, los deltas y la curva ganada (`hh_ganadas_acum`). El titular dice «Avance físico …» (las filas
+  anteriores al cambio siguen diciendo «Avance real …»).
+- `avance_manual`: el campo «Avance Real» ponderado por HH, **solo informativo** (por si algún JP lo usa); vacío si
+  ninguna tarea del proyecto lo tiene en más de 0. No entra en ningún cálculo.
+- `avance_real` (en `metricas_semanales`, `metricas_fase`, `fotos_tareas`, `cierres`): **obsoleto**. Desde el
+  2026-11-04 lleva el mismo valor que `avance_fisico`; se mantiene para no romper las páginas de Looker que lo leen y
+  se eliminará cuando se cambien a `avance_fisico`. En los cortes anteriores conserva el valor de la regla antigua
+  (manual si lo había; si no, porciones por cantidad o consumo en cajones v2).
+- Ya no se emiten `avance_sin_horas` ni `horas_sin_avance` (comparaban el campo manual con las horas).
+
+**Consumo, aparte.** `consumo_pct` = `hh_gastadas_acum` ÷ `total_hh` (en `proyectos` y `metricas_semanales`). Es un
+indicador de presupuesto gastado, no de avance, y no se mezcla con él. La curva S «real» sigue siendo horas gastadas.
+
+**Porciones vencidas sin cerrar** (el avance físico subestima si las porciones terminadas quedan abiertas; no se
+asume que estén terminadas, se muestra):
+
+- Advertencia `porcion_vencida_abierta` (nivel tarea, para el JP, prioridad normal, impacto «Distorsiona las
+  cifras»): porción de una tarea en modo `porciones`, con término anterior al corte, abierta y con horas registradas
+  (en ella y sus descendientes, hasta el corte) ≥ 50 % de su `time_estimate`. Mensaje: «“Modelación · 19-oct” venció
+  el 23-10, lleva 11 de 12 h y sigue abierta: si terminó, cerrarla». Va a la hoja aunque la porción no tenga HH.
+- `n_porciones_vencidas_abiertas` y `hh_porciones_vencidas_abiertas` (Σ `time_estimate` de esas porciones), y
+  `avance_fisico_si_cerradas`: el avance físico que tendría el proyecto si se cerraran. En `proyectos` y
+  `metricas_semanales`, para mostrarlos al lado del avance: «avance 42 % · 9 porciones vencidas sin cerrar (120 h) →
+  sería 58 %». El titular agrega «9 porciones vencidas sin cerrar (120 h): si se cierran, el avance sería 58,0 %.».
+- En el aviso semanal al JP (`mensajes_jp.py`), una línea al inicio con cuántas tiene y en qué proyectos.
+
+**Reproceso** de un corte oficial: `avance_real` y lo que depende de él se recalculan desde `fotos_tareas` (que desde
+el 2026-11-04 guarda el avance físico de cada tarea); las columnas de avance físico, modo, manual, consumo y porciones
+vencidas se conservan de la fila escrita.
 
 ## 2. Fechas
 

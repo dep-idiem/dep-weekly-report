@@ -78,18 +78,6 @@ def test_toda_tarea_con_hh_es_paquete_incluso_de_nivel_0():
     assert rev0 == []                                             # 00 Administración no entra al universo
 
 
-def test_avance_efectivo_por_origen():
-    ts = [T("f", "05 Ing"),
-          T("m", "5.1 Manual", "f", hh=10, avance=0.4), T("m1", "Manual", "m", te=5, s=D(2026, 9, 1), d=D(2026, 9, 4)),
-          T("p", "5.2 Por porciones", "f", hh=10),
-          T("p1", "Porciones", "p", te=5, s=D(2026, 9, 1), d=D(2026, 9, 4), tipo="closed"),
-          T("p2", "Porciones", "p", te=5, s=D(2026, 9, 7), d=D(2026, 9, 11)),
-          T("p3", "Porciones", "p", te=5, s=D(2026, 9, 14), d=D(2026, 9, 18), estado="no aplica"),
-          T("s", "5.3 Sin dato", "f", hh=10)]
-    av = EST.avance_efectivo(ts, EST.clasificar(ts))
-    assert av == {"m": (0.4, EST.MANUAL), "p": (0.5, EST.PORCIONES), "s": (None, EST.SIN_DATO)}
-
-
 # --- 4. 00 Administracion: presupuesto, fuera del universo -------------------------------------------------------
 
 def test_00_administracion_fuera_del_universo_y_como_presupuesto():

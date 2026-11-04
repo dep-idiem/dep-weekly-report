@@ -196,5 +196,9 @@ def aplicar(r: Reproceso, metricas: Sequence[dict], fases: Sequence[dict]) -> tu
         return list(metricas), list(fases)
     es = lambda f: f.get("corte") == r.corte and _oficial(f) and f.get("list_id") in r.recalculadas
     sem = [r.recalculadas[f["list_id"]][0] if es(f) else f for f in metricas]
-    fas = [f for f in fases if not es(f)] + [x for _, fs in r.recalculadas.values() for x in fs]
+    # El avance físico por fase (modo, manual) sale de ClickUp en vivo: se conserva el de la fila escrita.
+    previas = {(f.get("list_id"), f.get("fase")): f for f in fases if es(f)}
+    fas = [f for f in fases if not es(f)] + [{**x, **{k: previas.get((x.get("list_id"), x.get("fase")), {}).get(k)
+                                                     for k in E.AVANCE_FASE}}
+                                             for _, fs in r.recalculadas.values() for x in fs]
     return sem, fas

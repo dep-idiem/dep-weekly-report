@@ -5,7 +5,7 @@ from dep_clickup.client import parse_task
 from dep_clickup.config import TZ
 from dep_clickup.models import CustomField, ListInfo, Task, TimeEntry
 from dep_reportes import estructura as EST, horas as H, linea_base as LB, presentacion as PR, presupuesto as PRES
-from dep_reportes import resolucion as RES, run, v2 as V2
+from dep_reportes import avance as AV, resolucion as RES, run, v2 as V2
 from dep_reportes.adaptador_clickup import a_tareas_metrica
 from dep_reportes.metricas import Horas
 from dep_reportes.modos import por_nombre
@@ -85,20 +85,22 @@ def test_cajon_v2_es_paquete_sin_es_fase():
 
 # --- Cambio 4: avance --------------------------------------------------------------------------------
 
-def test_avance_v2_cerrado_manual_y_consumo():
+def test_avance_v2_cerrado_y_consumo_sin_leer_el_manual():
     tareas = _v2(_t("c8", "08 Revisión", hh=10, estado="completado", tipo="done"),
                  _t("c3", "03 Antecedentes Cliente", hh=16, avance=0.5))
-    av = EST.avance_efectivo(tareas, EST.clasificar(tareas), {"c6": 30.0, "c7": 50.0, "c3": 1.0})
-    assert av["c8"] == (1.0, EST.CERRADO)
-    assert av["c3"] == (0.5, EST.MANUAL)
-    assert av["c6"] == (0.3, EST.CONSUMO)
-    assert av["c7"] == (0.9, EST.CONSUMO)                                    # 250 % de consumo, tope 90 %
-    assert av["a0"] == (0.0, EST.CONSUMO)
+    hh = {t.id: t.hh for t in a_tareas_metrica(tareas) if t.hh}
+    av = AV.calcular(tareas, hh, {"c6": 30.0, "c7": 50.0, "c3": 1.0}, CORTE)
+    assert (av["c8"].avance, av["c8"].modo) == (1.0, AV.CERRADA)
+    assert (av["c3"].avance, av["c3"].modo, av["c3"].manual) == (1 / 16, AV.CONSUMO, 0.5)   # el manual no se usa
+    assert (av["c6"].avance, av["c6"].modo) == (0.3, AV.CONSUMO)
+    assert (av["c7"].avance, av["c7"].modo) == (0.9, AV.CONSUMO)            # 250 % de consumo, tope 90 %
+    assert (av["a0"].avance, av["a0"].modo) == (0.0, AV.CONSUMO)
 
 
-def test_avance_lista_antigua_sin_cambios():
-    av = EST.avance_efectivo(ANTIGUA, EST.clasificar(ANTIGUA), {"p1": 99.0})
-    assert av["p1"][1] == EST.SIN_DATO
+def test_avance_lista_antigua_por_consumo():
+    hh = {t.id: t.hh for t in a_tareas_metrica(ANTIGUA) if t.hh}
+    av = AV.calcular(ANTIGUA, hh, {"p1": 99.0}, CORTE)
+    assert (av["p1"].avance, av["p1"].modo) == (0.9, AV.CONSUMO)            # antes: sin dato (avance manual vacío)
 
 
 def test_nota_de_consumo_en_el_titular():
@@ -107,6 +109,8 @@ def test_nota_de_consumo_en_el_titular():
     assert PR.avance_por_consumo({"a": "manual"}) is None
     txt = PR.titular(True, 0.3, 0.4, consumo="por consumo, tope 90 %")
     assert txt.startswith("Avance real 30,0 % (por consumo, tope 90 %) frente a 40,0 % programado")
+    txt = PR.titular(True, 0.3, 0.4, consumo="por consumo, tope 90 %", fisico=True)
+    assert txt.startswith("Avance físico 30,0 % (por consumo, tope 90 %) frente a 40,0 % programado")
 
 
 # --- Rev. 0 con la primera hora registrada, programado provisional antes ----------------------------
@@ -181,7 +185,7 @@ def test_v2_sin_evento_programado_provisional():
     ms = filas["metricas_semanales"][0]
     assert ms["linea_base_provisional"] is True and ms["rev_linea_base"] is None and ms["tiene_linea_base"] is False
     assert ms["desviacion_pts"] is not None
-    assert ms["titular"].startswith("Programado provisional (aún sin línea base congelada). Avance real 0,0 % "
+    assert ms["titular"].startswith("Programado provisional (aún sin línea base congelada). Avance físico 0,0 % "
                                     "(por consumo, tope 90 %)")
     assert any(f["hh_prog_acum"] for f in filas["serie_diaria"])
     assert filas.get("linea_base", []) == []
@@ -193,8 +197,8 @@ def test_v2_primera_hora_congela_rev0_con_todos_los_cajones():
     assert {f.task_id: f.hh for f in r.lb_nuevas} == {"a0": 9, "c6": 100, "c7": 20}
     assert {f.tipo for f in r.lb_nuevas} == {"normal"}
     assert r.lb_nuevas[0].motivo == "Rev. 0 automática (normal: primera hora registrada el 05-11-2026)"
-    assert r.origen_avance["c6"] == EST.CONSUMO
-    assert not [a for a in r.advertencias_todas if a["tipo"] == "horas_sin_avance"]      # el consumo la reemplaza
+    assert r.origen_avance["c6"] == AV.CONSUMO
+    assert not [a for a in r.advertencias_todas if a["tipo"] == "horas_sin_avance"]      # ya no se emite
     c6 = next(t for t in r.tm if t.id == "c6")
     assert c6.avance == 0.3
     ms = run.filas_de(r, CORTE, por_nombre("dep"), AHORA)["metricas_semanales"][0]

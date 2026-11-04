@@ -38,6 +38,8 @@ class Proyecto:
     jp: str
     tiene_linea_base: bool
     advertencias: list[dict] = field(default_factory=list)
+    n_vencidas: int = 0                 # porciones vencidas abiertas (metricas_semanales, avance.py)
+    hh_vencidas: float = 0.0
 
     @property
     def motivo(self) -> str:
@@ -91,10 +93,26 @@ def ordenar(proyectos: Sequence[Proyecto]) -> list[Proyecto]:
     return sorted(proyectos, key=lambda p: (p.tiene_linea_base, p.codigo))
 
 
+def resumen_vencidas(proyectos: Sequence[Proyecto]) -> str:
+    """Porciones vencidas sin cerrar del JP, en total y por proyecto (vacío si no tiene)."""
+    con = [p for p in ordenar(proyectos) if p.n_vencidas]
+    if not con:
+        return ""
+    n, h = sum(p.n_vencidas for p in con), sum(p.hh_vencidas for p in con)
+    cuantas = "1 porción vencida" if n == 1 else f"{n} porciones vencidas"
+    detalle = "; ".join(f"{p.etiqueta}: {p.n_vencidas} ({PR.hh(p.hh_vencidas)} h)" for p in con)
+    return (f"Porciones vencidas sin cerrar: {cuantas} ({PR.hh(h)} h) en {len(con)} proyecto"
+            f"{'' if len(con) == 1 else 's'} ({detalle}). El avance físico solo cuenta las porciones cerradas: si "
+            "terminaron, ciérralas en ClickUp.")
+
+
 def mensaje_jp(jp: str, proyectos: Sequence[Proyecto], nombres, corte: dt.date, plantilla: str, cfg: dict) -> str:
     adm = cfg.get("responsable_administracion", "Administración DEP")
     fecha_oficial = cfg.get("fecha_primer_reporte_oficial")
     bloques = "\n\n".join(bloque_proyecto(p, nombres, adm) for p in ordenar(proyectos))
+    venc = resumen_vencidas(proyectos)
+    if venc:
+        bloques = venc + "\n\n" + bloques
     return plantilla.format(
         jp_nombre=jp, jp_nombre_pila=jp.split()[0] if jp.split() else jp, corte=PR.fecha(corte),
         fecha_primer_reporte=PR.fecha(dt.date.fromisoformat(fecha_oficial)) if fecha_oficial else "[fecha por definir]",
@@ -141,7 +159,9 @@ def advertencias_sueltas(tablas: dict[str, list[dict]], corte: dt.date, tipo_cor
 def proyectos_del_corte(tablas: dict[str, list[dict]], corte: dt.date, tipo_corte: str) -> list[Proyecto]:
     del_corte = lambda f: f.get("corte") == corte and (f.get("tipo_corte") or E.OFICIAL) == tipo_corte
     ps = {f["list_id"]: Proyecto(f["list_id"], f["codigo"], f.get("proyecto") or f["codigo"],
-                                 f.get("jp_nombre") or SIN_JP, bool(f.get("tiene_linea_base")))
+                                 f.get("jp_nombre") or SIN_JP, bool(f.get("tiene_linea_base")),
+                                 n_vencidas=int(f.get("n_porciones_vencidas_abiertas") or 0),
+                                 hh_vencidas=float(f.get("hh_porciones_vencidas_abiertas") or 0.0))
           for f in tablas.get("metricas_semanales", []) if del_corte(f)}
     for a in tablas.get("advertencias", []):
         if del_corte(a) and a["list_id"] in ps:

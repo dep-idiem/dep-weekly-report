@@ -49,6 +49,14 @@ CURVA = [("estado_curva", TEXTO), ("programada_modo", TEXTO)]
 RITMO = [("ritmo_real", NUMERO), ("semanas_desfase", NUMERO), ("hh_pendientes", NUMERO),
          ("horas_necesarias_semana", NUMERO), ("fecha_termino_estimada", FECHA)]
 
+# Avance físico (avance.py, TAREA_avance_fisico 2026-11-04), en proyectos y metricas_semanales. avance_real queda
+# obsoleto: lleva el mismo valor que avance_fisico (docs/definiciones_reporte.md). consumo_pct = hh_gastadas_acum /
+# total_hh, indicador aparte. avance_manual: el campo «Avance Real» de ClickUp ponderado por HH, solo informativo.
+AVANCE_FISICO = [("avance_fisico", NUMERO), ("avance_fisico_modo", TEXTO), ("consumo_pct", NUMERO),
+                 ("hh_porciones_vencidas_abiertas", NUMERO), ("n_porciones_vencidas_abiertas", ENTERO),
+                 ("avance_fisico_si_cerradas", NUMERO), ("avance_manual", NUMERO)]
+AVANCE_FASE = ["avance_fisico", "avance_fisico_modo", "avance_manual"]
+
 TABLAS: dict[str, list[tuple[str, str]]] = {
     # Plazo (presentacion.extension_plazo): entrega contractual de la linea base vigente frente al termino vigente de la
     # lista; es_extension si el termino vigente es posterior y dias_extension en dias habiles (negativo si se adelanto).
@@ -56,7 +64,7 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                   ("jp_email", TEXTO),
                   ("estado_lista", TEXTO), ("fecha_inicio", FECHA), ("fecha_termino_vigente", FECHA),
                   ("estado_linea_base", TEXTO), ("rev_vigente", ENTERO), ("actualizado_en", FECHA_HORA)]
-                 + ESTADO + [("corte_cierre", FECHA)] + PROGRAMA + PLAZO + CURVA + RITMO,
+                 + ESTADO + [("corte_cierre", FECHA)] + PROGRAMA + PLAZO + CURVA + RITMO + AVANCE_FISICO,
     "linea_base": [("list_id", TEXTO), ("rev", ENTERO), ("tipo", TEXTO), ("fecha_captura", FECHA_HORA), ("motivo", TEXTO),
                    ("fecha_inicio", FECHA), ("fecha_entrega_contractual", FECHA), ("task_id", TEXTO),
                    ("task_nombre", TEXTO), ("fase", TEXTO), ("hh", NUMERO), ("start", FECHA), ("due", FECHA)],
@@ -75,10 +83,11 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                           # Reproceso (reproceso.py): termino con que se repartieron los pendientes (insumo del reproceso
                           # desde fotos) y, si el corte se recalculo con datos posteriores a su primera escritura, cuando.
                           + [("fecha_termino_usada", FECHA), ("reprocesado_en", FECHA_HORA)]
-                          + PLAZO + CURVA,
+                          + PLAZO + CURVA + AVANCE_FISICO,
     "metricas_fase": [("corte", FECHA)] + CORTE + [("list_id", TEXTO)] + IDENT
                      + [("fase", TEXTO), ("hh_linea_base", NUMERO), ("hh_prog_acum", NUMERO),
-                        ("hh_gastadas_acum", NUMERO), ("avance_real", NUMERO)],
+                        ("hh_gastadas_acum", NUMERO), ("avance_real", NUMERO),
+                        ("avance_fisico", NUMERO), ("avance_fisico_modo", TEXTO), ("avance_manual", NUMERO)],
     "fotos_tareas": [("corte", FECHA), ("list_id", TEXTO), ("task_id", TEXTO), ("parent_id", TEXTO),
                      ("task_nombre", TEXTO), ("fase", TEXTO), ("estado", TEXTO), ("hh", NUMERO), ("start", FECHA),
                      ("due", FECHA), ("avance_real", NUMERO), ("hh_gastadas_acum", NUMERO),

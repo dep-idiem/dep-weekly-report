@@ -345,6 +345,11 @@ CATALOGO.update({
         INFORMATIVA, INFORMATIVA, INFORMATIVA,
         lambda c, a: f"Si {_t(c)} no empezó antes del contrato, corrige su fecha de inicio en ClickUp.",
         prioridad=BAJA),
+    "porcion_vencida_abierta": Entrada(
+        "Una porción venció antes del corte, sigue abierta y ya lleva la mitad o más de sus horas estimadas: el avance "
+        "físico la cuenta como no hecha (si terminó, el avance está subestimado).",
+        JP, DISTORSIONA, DISTORSIONA,
+        lambda c, a: f"En ClickUp, si {_t(c)} ya terminó, ciérrala; si no, actualiza su fecha de término."),
     "fechas_fuera_de_lista": Entrada(
         "Una tarea con HH Presupuestadas no tiene fechas, las tiene al revés o caen fuera del inicio y término de la "
         "lista: sus HH se reparten en todo el plazo de la lista.",
@@ -413,6 +418,10 @@ ACCION_GRUPAL: dict[str, Callable[[str, int, bool, str], str]] = {
     "fechas_fuera_de_lista": lambda ts, n, lb, a: (
         f"En ClickUp, corrige las fechas de estas {n} tareas para que queden dentro del plazo de la lista (hoy sus HH "
         f"se reparten en todo el plazo): {ts}."),
+    "porcion_vencida_abierta": lambda ts, n, lb, a: (
+        f"Estas {n} porciones vencieron y siguen abiertas con la mitad o más de sus horas registradas: {ts}. En "
+        "ClickUp, cierra las que terminaron (el avance físico solo cuenta las cerradas) y a las demás actualízales la "
+        "fecha de término."),
     "no_aplica_con_hh": lambda ts, n, lb, a: (
         f"En ClickUp, borra las HH Presupuestadas de estas {n} tareas en No Aplica o, si sí aplican, cambia su "
         f"estado: {ts}."),

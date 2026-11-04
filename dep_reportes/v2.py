@@ -7,8 +7,8 @@ Una lista es v2 si alguna tarea de primer nivel se llama «00 Administración y 
 - un cajón con HH no es una «fase con HH» (estructura.clasificar);
 - la Rev. 0 y la programada siguen la regla común a todas las listas desde el 2026-11-03 (linea_base.evento_congelar,
   programada.py): se congela con la primera hora registrada; hasta entonces el programado es PROVISIONAL;
-- avance de un cajón: cerrado = 100 %; si no, «Avance Real» manual; si no, por consumo: horas / HH con tope 90 %
-  (estructura.avance_efectivo).
+- avance de un cajón: el avance físico de todas las listas (avance.py): cerrado = 100 %; si no, porciones cerradas,
+  checklist o consumo (horas / HH con tope 90 %). Desde el 2026-11-04 el campo manual «Avance Real» ya no se lee.
 """
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from dep_clickup.models import Task
 
 NOMBRE_ADMIN = "00 Administración y cierre"
 TAG = "v2"
-TOPE_CONSUMO = 0.9
 
 
 def _norm(s: str) -> str:

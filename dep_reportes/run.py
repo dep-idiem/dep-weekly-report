@@ -32,6 +32,7 @@ from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_bas
 from . import horas as H, personas as PERS, reproceso as REP, resolucion as RES
 from . import estructura as EST, finalizados as FIN, metricas as MT, plan_semanal as PS, presupuesto as PRES
 from . import plan_vs_real as PVR, programada as PROG, programas as PG, reportes_diarios as RD, v2 as V2
+from . import avance as AV
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
 from .config_reportes import (DRY_RUN_DIR, FOLDER_PJ_INGENIERIA, FOLDER_PROYECTOS_FINALIZADOS, IMPORTADAS, RESPALDOS_DIR,
@@ -99,7 +100,7 @@ class ResultadoLista:
     advertencias: list[dict]           # las que van a la hoja
     advertencias_todas: list[dict]     # incluye las del detector sobre tareas sin HH
     clases: dict = field(default_factory=dict)          # task_id -> estructura.Clase
-    origen_avance: dict = field(default_factory=dict)   # paquete -> manual / porciones / sin_dato
+    origen_avance: dict = field(default_factory=dict)   # tarea del presupuesto -> modo de avance (avance.py)
     presupuesto: dict = field(default_factory=dict)     # columnas de presupuesto de metricas_semanales
     plan_semanal: list = field(default_factory=list)    # filas por semana (solo agregado por proyecto)
     extra: dict = field(default_factory=dict)           # datos para el informe del dry-run
@@ -110,6 +111,7 @@ class ResultadoLista:
     necesarias: dict = field(default_factory=dict)      # lunes -> horas necesarias (plan_vs_real.necesarias_por_semana)
     programada: PROG.Programada | None = None           # tareas con que se reparte la programada (programada.py)
     estado_curva: str = PROG.OK                         # ok / sin_presupuesto / presupuesto_incoherente / retenida / recurrente
+    avance: dict = field(default_factory=dict)          # columnas de avance físico del proyecto (avance.resumen)
 
 
 @dataclass
@@ -182,14 +184,13 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     tm_manual = a_tareas_metrica(tareas)
     horas = a_horas(entradas_lista)
     es_v2 = V2.es_v2(tareas)
-    # Capa de porciones (estructura.py): avance del paquete desde sus porciones cuando no hay avance manual; en listas
-    # v2, cajón cerrado o avance por consumo (horas / HH, tope 90 %).
     clases = EST.clasificar(tareas)
-    gastadas_t = horas_por_tarea([h for h in horas if h.fecha <= corte], {t.id: t.parent for t in tm_manual},
-                                 acumular_en_ancestros=True) if es_v2 else None
-    av = EST.avance_efectivo(tareas, clases, gastadas_t)
-    calculado = (EST.PORCIONES, EST.CERRADO, EST.CONSUMO)
-    tm = [replace(t, avance=av[t.id][0]) if av.get(t.id, (None, ""))[1] in calculado else t for t in tm_manual]
+    # Avance físico (avance.py): tarea cerrada, porciones cerradas ponderadas por estimate, checklist o consumo. El campo
+    # manual «Avance Real» no entra en ningún cálculo: solo se guarda como avance_manual.
+    hpt = horas_por_tarea([h for h in horas if h.fecha <= corte], {t.id: t.parent for t in tm_manual},
+                          acumular_en_ancestros=True)
+    av = AV.calcular(tareas, {t.id: t.hh for t in MT.universo(tm_manual)}, hpt, corte)
+    tm = [replace(t, avance=av[t.id].avance if t.id in av else None) for t in tm_manual]
     con_porciones = EST.porciones_de(clases)
     jp = buscar_jp(lista, miembros)
     avisos: list[P.Aviso] = []
@@ -212,6 +213,8 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     # Presupuesto y estado de la curva (programada.py): sin presupuesto, más horas que presupuesto antes de la Rev. 0 o
     # lista de un programa de servicio continuo no congelan ni tienen programado.
     sin_na = lambda ts: [t for t in MT.universo(ts) if not (modo.excluir_no_aplica and P.es_no_aplica(t))]
+    hh_avance = {t.id: t.hh for t in sin_na(tm)}         # el mismo universo que P.calcular
+    avance = AV.resumen(av, hh_avance)
     vig = LB.vigente(lb_exist, lista.id)
     presupuesto_hh = MT.total_hh(sin_na(tm))
     registradas = conteo.hh_historicas + sum(h.horas for h in horas if h.fecha <= corte)
@@ -292,8 +295,8 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
                      pendientes_plan=None if proyeccion == "plan_semanal" else pend_plan) if pend_plan else res
     extra = {"hh_estimadas_uniforme": (alt if proyeccion == "plan_semanal" else res).metricas["hh_estimadas_al_termino"],
              "hh_estimadas_plan_semanal": (res if proyeccion == "plan_semanal" else alt).metricas["hh_estimadas_al_termino"],
-             "avance_real_manual": MT.avance_real(tm_manual) if MT.total_hh(tm_manual) else None,
-             "origen_avance": dict(Counter(o for _, o in av.values())),
+             "avance_real_manual": avance["avance_manual"],
+             "origen_avance": dict(Counter(a.modo for a in av.values())),
              "ultima_historica": conteo.ultima_historica}
     # Reglas de conteo de horas (solo horas nativas hasta el corte)
     al_corte = [h for h in horas if h.fecha <= corte]
@@ -334,21 +337,23 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     avisos += H.lista_combinada(tm)
     avisos += H.aviso_tt_sin_clickup(conteo.tt_sin_clickup, conteo.corte_historico)
 
-    padres = {t.id: t.parent for t in tm}
-    hpt = horas_por_tarea([h for h in horas if h.fecha <= corte], padres, acumular_en_ancestros=True)
-    # El detector evalua lo que cargo el JP (avance manual y HH tal cual, para avisar el doble conteo), no el avance
-    # calculado desde porciones.
+    # Porciones vencidas abiertas (avance.py): el avance físico las cuenta como no hechas; se avisa al JP.
+    for tid in hh_avance:
+        for x in av[tid].vencidas if tid in av else ():
+            avisos.append(P.Aviso(P.ADV_PORCION_VENCIDA, x.task_id,
+                                  f"\"{x.nombre}\" venció el {x.due}, lleva {x.horas:.1f} de {x.estimado:g} h y sigue abierta",
+                                  {"nombre": x.nombre, "due": x.due, "horas": x.horas, "estimado": x.estimado}))
+    # El detector evalua las HH tal cual las cargo el JP (para avisar el doble conteo). «Avance sin horas» y «horas sin
+    # avance» miraban el campo manual «Avance Real», que ya no se usa (avance.py): no se emiten.
     detector = calidad.detectar(a_tareas_metrica(tareas, solo_superiores=False), hpt,
                                 {t.id: t.time_estimate_h for t in tareas})
+    detector = [a for a in detector if a.tipo not in (calidad.AVANCE_SIN_HORAS, calidad.HORAS_SIN_AVANCE)]
     # "Tarea padre con HH y subtareas sin HH" no aplica si todas las subtareas son porciones: es la estructura normal.
     normales = EST.solo_porciones_debajo(tareas, clases)
     detector = [a for a in detector if not (a.tipo == calidad.HH_EN_PADRE and a.tarea_id in normales)]
     if es_v2:
-        # El cajón v2 lleva HH Presupuestadas y no time estimate: no es un problema de datos. Y en un cajón sin avance
-        # manual el avance sale por consumo (estructura.avance_efectivo): «horas sin avance» no aplica.
-        cajones = {tid for tid, c in clases.items() if c.tipo == EST.PAQUETE and c.nivel == 0}
-        detector = [a for a in detector if a.tipo != calidad.HH_VS_ESTIMATE
-                    and not (a.tipo == calidad.HORAS_SIN_AVANCE and a.tarea_id in cajones)]
+        # El cajón v2 lleva HH Presupuestadas y no time estimate: no es un problema de datos.
+        detector = [a for a in detector if a.tipo != calidad.HH_VS_ESTIMATE]
     nombres = {f.task_id: f.task_nombre for f in lb_filas} | {t.id: t.nombre for t in tm}
     etiqueta, tiene_lb = PR.etiqueta_proyecto(codigo, nombre_corto), bool(lb_filas)
     adv = [fila_advertencia(corte, lista.id, a.tipo, a.task_id or "", a.detalle,
@@ -367,8 +372,17 @@ def procesar_lista(lista: ListInfo, tareas: list[Task], entradas_lista, miembros
     pvr = PVR.filas(corte, "", lista.id, codigo.removeprefix("PJ-"), nombre_corto, jp.username if jp else SIN_JP,
                     plan_p, regs, necesarias)
     r = ResultadoLista(lista, codigo, jp, tareas, tm, horas, dec, lb_filas, nuevas, res,
-                       P.para_hoja(adv, con_hh), adv, clases, {k: o for k, (_, o) in av.items()}, pres, filas_ps,
+                       P.para_hoja(adv, con_hh), adv, clases, {k: a.modo for k, a in av.items()}, pres, filas_ps,
                        extra, situacion)
+    r.avance = avance
+    # Avance físico por fase (las mismas tareas que el avance_real de la fase en proyecto.calcular).
+    fase_de = P.fases_por_tarea(tm)
+    por_fase: dict[str, dict[str, float]] = defaultdict(dict)
+    for tid, h in hh_avance.items():
+        por_fase[fase_de.get(tid, P.SIN_FASE)][tid] = h
+    for f in res.fases:
+        rf = AV.resumen(av, por_fase.get(f["fase"], {}))
+        f.update({k: rf[k] for k in E.AVANCE_FASE})
     r.plan_vs_real, r.heredadas, r.necesarias = pvr, [t.id for t in heredadas], necesarias
     r.programada, r.estado_curva = progr, estado_curva
     return r
@@ -518,6 +532,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
         "ritmo_real": ritmo, "semanas_desfase": desfase, "hh_pendientes": pend,
         "horas_necesarias_semana": PR.horas_necesarias_semana(pend, corte, contractual, modo.cal),
         "fecha_termino_estimada": PR.fecha_termino_estimada(pend, ritmo, corte),
+        **avance_fisico(r),
     })
     tc = {"corte": corte, "tipo_corte": tipo_corte}
     sit = r.situacion
@@ -544,7 +559,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
                "hh_estimadas_termino_plan_semanal": r.extra.get("hh_estimadas_plan_semanal"),
                "fecha_termino_usada": mt.get("fecha_termino_usada"),
                "dias_habiles_para_entrega": PR.dias_habiles_para_entrega(
-                   corte, r.lista.due.date() if r.lista.due else None, modo.cal), **plazo, **curva}
+                   corte, r.lista.due.date() if r.lista.due else None, modo.cal), **plazo, **curva, **avance_fisico(r)}
     motivo = None if (r.lb_filas or prov) else PR.motivo_sin_linea_base(a["tipo"] for a in r.advertencias_todas)
     out["metricas_semanales"].append(semanal | PR.derivadas_semanales(semanal, motivo, r.decision.retenida,
                                                                       PR.nota_congelada(r.lb_nuevas)))
@@ -591,6 +606,12 @@ def _serie(r: ResultadoLista, tc: dict, idn: dict, corte: dt.date | None = None,
              "hh_gastadas_acum": p.gastadas, "hh_proyectadas_acum": p.proyectadas,
              "hh_linea_base": mt["total_hh"] if con_prog else None, "hh_ganadas_acum": g}
             for p, g in zip(serie, ganadas)]
+
+
+def avance_fisico(r: ResultadoLista) -> dict:
+    """Columnas de avance físico de proyectos y metricas_semanales (avance.py) y consumo = horas / HH totales."""
+    return {**{k: r.avance.get(k) for k, _ in E.AVANCE_FISICO if k != "consumo_pct"},
+            "consumo_pct": r.resultado.metricas.get("consumo_pct")}
 
 
 def provisional(r: ResultadoLista) -> bool:

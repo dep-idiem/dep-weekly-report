@@ -244,7 +244,8 @@ def test_ritmo_y_desfase_en_proyectos():
     p = run.filas_de(r, CORTE, DEP, AHORA)["proyectos"][0]
     assert p["ritmo_real"] == 10
     pend = r.resultado.metricas["hh_pendientes"]
-    assert pend == 50                                                # sin avance real: todo el presupuesto
+    # avance físico por consumo (avance.py): «a» lleva 20 h de 20 HH (tope 90 %: quedan 2), «b» sin horas (30)
+    assert pend == 32
     habiles = DEP.cal.networkdays(D(2026, 11, 2), D(2026, 11, 27))
     assert p["semanas_desfase"] == pend / 10 - habiles / 5
     sin = run.filas_de(_procesar([_t("f", "05 Ingeniería")], entradas), CORTE, DEP, AHORA)["proyectos"][0]
@@ -274,9 +275,9 @@ def test_necesarias_en_proyectos_y_plan_semanal():
     out = run.filas_de(r, CORTE, DEP, AHORA)
     p = out["proyectos"][0]
     habiles = DEP.cal.networkdays(D(2026, 11, 2), D(2026, 11, 27))
-    assert p["hh_pendientes"] == 50
-    assert p["horas_necesarias_semana"] == 50 / (habiles / 5)
-    assert p["fecha_termino_estimada"] == CORTE + dt.timedelta(days=35)                   # 50 h a 10 h/sem
+    assert p["hh_pendientes"] == 32                                  # «a» por consumo con tope 90 % (2) + «b» (30)
+    assert p["horas_necesarias_semana"] == 32 / (habiles / 5)
+    assert p["fecha_termino_estimada"] == CORTE + dt.timedelta(days=22)                   # 32 h a 10 h/sem
     ps = {f["semana"]: f for f in out["plan_semanal"]}
     # «a» ya gastó sus 20 h; «b» (30 h) venció: todo a la primera semana después del corte, como en la hoja de los JP.
     assert ps[D(2026, 11, 2)]["horas_necesarias_semana"] == 30

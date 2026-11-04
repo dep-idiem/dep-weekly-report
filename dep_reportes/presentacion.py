@@ -120,7 +120,7 @@ CONSUMO_TODO, CONSUMO_PARCIAL = "por consumo, tope 90 %", "parte por consumo, to
 
 
 def avance_por_consumo(origenes: Mapping[str, str]) -> str | None:
-    """Nota del avance real cuando sale de horas / HH (cajones v2 sin avance manual; estructura.avance_efectivo):
+    """Nota del avance cuando sale de horas / HH (tareas sin porciones ni checklist; avance.py):
     «por consumo, tope 90 %» si todos los paquetes con origen lo usan, «parte por consumo…» si solo algunos."""
     n = sum(1 for o in origenes.values() if o == "consumo")
     if not n:
@@ -128,14 +128,26 @@ def avance_por_consumo(origenes: Mapping[str, str]) -> str | None:
     return CONSUMO_TODO if n == len(origenes) else CONSUMO_PARCIAL
 
 
+def nota_vencidas(fila: Mapping) -> str:
+    """Frase del titular con las porciones vencidas abiertas y el avance que tendría el proyecto si se cerraran."""
+    n, h, si = (fila.get(k) for k in ("n_porciones_vencidas_abiertas", "hh_porciones_vencidas_abiertas",
+                                       "avance_fisico_si_cerradas"))
+    if not n or si is None:
+        return ""
+    cuantas = "1 porción vencida sin cerrar" if n == 1 else f"{n} porciones vencidas sin cerrar"
+    return f" {cuantas} ({hh(h or 0)} h): si se cierran, el avance sería {pct(si)}."
+
+
 def titular(tiene_linea_base: bool, avance_real: float | None, avance_prog: float | None,
             motivo: str | None = None, presupuesto: Mapping | None = None, provisional: bool = False,
-            consumo: str | None = None, retenida: str | None = None) -> str:
+            consumo: str | None = None, retenida: str | None = None, fisico: bool = False,
+            vencidas: str = "") -> str:
     """provisional: el programado sale de las HH y fechas vigentes; retenida: motivo de config "linea_base_retenida";
-    consumo: nota de avance_por_consumo."""
+    consumo: nota de avance_por_consumo; fisico: la fila tiene avance físico (avance.py, desde el 2026-11-04; las filas
+    anteriores dicen «Avance real»); vencidas: nota_vencidas."""
     if provisional:
         pre = RETENIDA.format(motivo=retenida) if retenida else PROVISIONAL
-        return pre + titular(True, avance_real, avance_prog, motivo, presupuesto, False, consumo)
+        return pre + titular(True, avance_real, avance_prog, motivo, presupuesto, False, consumo, None, fisico, vencidas)
     if not tiene_linea_base:
         p = presupuesto or {}
         if p.get("hh_contrato") and p.get("pct_contrato_usado") is not None:
@@ -153,10 +165,10 @@ def titular(tiene_linea_base: bool, avance_real: float | None, avance_prog: floa
         return f"Sin avance real registrado frente a {pct(avance_prog)} programado."
     d = desviacion_pts(avance_real, avance_prog)
     nota = f" ({consumo})" if consumo else ""
-    base = f"Avance real {pct(avance_real)}{nota} frente a {pct(avance_prog)} programado: "
+    base = f"Avance {'físico' if fisico else 'real'} {pct(avance_real)}{nota} frente a {pct(avance_prog)} programado: "
     if abs(d) < UMBRAL_EN_LINEA_PTS:
-        return base + "en línea con el plan."
-    return base + f"{num(abs(d))} puntos {'bajo' if d < 0 else 'sobre'} el plan."
+        return base + "en línea con el plan." + vencidas
+    return base + f"{num(abs(d))} puntos {'bajo' if d < 0 else 'sobre'} el plan." + vencidas
 
 
 def derivadas_semanales(fila: Mapping, motivo: str | None = None, retenida: str | None = None,
@@ -171,7 +183,8 @@ def derivadas_semanales(fila: Mapping, motivo: str | None = None, retenida: str 
         "desviacion_pts": desviacion_pts(fila.get("avance_real"), fila.get("avance_prog")) if con_prog else None,
         "pct_presupuesto_usado": pct_presupuesto_usado(fila.get("hh_gastadas_acum"), fila.get("total_hh")) if con_prog else None,
         "titular": prefijo + titular(tiene, fila.get("avance_real"), fila.get("avance_prog"), motivo, fila, prov,
-                                     fila.get("avance_por_consumo"), retenida),
+                                     fila.get("avance_por_consumo"), retenida, bool(fila.get("avance_fisico_modo")),
+                                     nota_vencidas(fila)),
     }
 
 
@@ -380,6 +393,12 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
             return (f"{t} empieza {d['dias']} días antes del inicio de la lista ({fecha(d['inicio_lista'])}): sus HH se "
                     "reparten con sus propias fechas")
         return f"{t} empieza antes del inicio de la lista: sus HH se reparten con sus propias fechas"
+    if tipo == "porcion_vencida_abierta":
+        nombre = f"“{d['nombre']}”" if d.get("nombre") else (f"“{tarea}”" if tarea else "Una porción")
+        if d.get("due") and "horas" in d and "estimado" in d:
+            return (f"{nombre} venció el {d['due']:%d-%m}, lleva {num(d['horas'], 0)} de {hh(d['estimado'])} h y sigue "
+                    "abierta: si terminó, cerrarla")
+        return f"{nombre} venció y sigue abierta: si terminó, cerrarla"
     if tipo == "fechas_fuera_de_lista":
         if d.get("motivo"):
             return (f"{t} ({d['motivo']}): sus HH se reparten entre el inicio y el término de la lista; corregir sus "
@@ -521,7 +540,8 @@ def avances_por_lista(semanales: Sequence[Mapping], corte: dt.date) -> dict[str,
     out: dict[str, dict[dt.date, float]] = {}
     oficial: set[tuple[str, dt.date]] = set()
     for f in semanales:
-        c, lid, av = f.get("corte"), f.get("list_id"), f.get("avance_real")
+        av = f.get("avance_fisico") if f.get("avance_fisico") is not None else f.get("avance_real")
+        c, lid = f.get("corte"), f.get("list_id")
         if not (isinstance(c, dt.date) and lid and isinstance(av, (int, float))) or c >= corte or f.get("ev") is None:
             continue
         if (lid, c) in oficial:
