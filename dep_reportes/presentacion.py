@@ -515,12 +515,14 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
 
 def avances_por_lista(semanales: Sequence[Mapping], corte: dt.date) -> dict[str, dict[dt.date, float]]:
     """list_id -> {corte anterior: avance_real} desde metricas_semanales guardadas (el corte en curso se omite: su
-    avance sale de la corrida). Con un oficial y un preliminar del mismo dia manda el oficial."""
+    avance sale de la corrida). Con un oficial y un preliminar del mismo dia manda el oficial. Solo cortes con ev
+    (tenian HH totales): sin presupuesto el avance real se media de otra forma y no es comparable (0225: 100 % el
+    18-oct, 0,3 % el 25-oct)."""
     out: dict[str, dict[dt.date, float]] = {}
     oficial: set[tuple[str, dt.date]] = set()
     for f in semanales:
         c, lid, av = f.get("corte"), f.get("list_id"), f.get("avance_real")
-        if not (isinstance(c, dt.date) and lid and isinstance(av, (int, float))) or c >= corte:
+        if not (isinstance(c, dt.date) and lid and isinstance(av, (int, float))) or c >= corte or f.get("ev") is None:
             continue
         if (lid, c) in oficial:
             continue

@@ -27,13 +27,14 @@ def test_sin_total_o_sin_avance():
 
 def test_avances_por_lista_omite_corte_actual_y_prefiere_oficial():
     filas = [
-        {"corte": D(2026, 11, 1), "tipo_corte": "oficial", "list_id": "a", "avance_real": 0.2},
-        {"corte": D(2026, 11, 1), "tipo_corte": "preliminar", "list_id": "a", "avance_real": 0.9},
-        {"corte": D(2026, 10, 25), "tipo_corte": "preliminar", "list_id": "a", "avance_real": 0.1},
-        {"corte": D(2026, 10, 26), "tipo_corte": "preliminar", "list_id": "b", "avance_real": 0.3},
-        {"corte": D(2026, 10, 26), "tipo_corte": "oficial", "list_id": "b", "avance_real": 0.4},
-        {"corte": D(2026, 11, 3), "tipo_corte": "preliminar", "list_id": "a", "avance_real": 0.5},
+        {"corte": D(2026, 11, 1), "tipo_corte": "oficial", "list_id": "a", "avance_real": 0.2, "ev": 1},
+        {"corte": D(2026, 11, 1), "tipo_corte": "preliminar", "list_id": "a", "avance_real": 0.9, "ev": 1},
+        {"corte": D(2026, 10, 25), "tipo_corte": "preliminar", "list_id": "a", "avance_real": 0.1, "ev": 1},
+        {"corte": D(2026, 10, 26), "tipo_corte": "preliminar", "list_id": "b", "avance_real": 0.3, "ev": 1},
+        {"corte": D(2026, 10, 26), "tipo_corte": "oficial", "list_id": "b", "avance_real": 0.4, "ev": 1},
+        {"corte": D(2026, 11, 3), "tipo_corte": "preliminar", "list_id": "a", "avance_real": 0.5, "ev": 1},
         {"corte": D(2026, 10, 20), "tipo_corte": "oficial", "list_id": "c", "avance_real": None},
+        {"corte": D(2026, 10, 18), "tipo_corte": "oficial", "list_id": "d", "avance_real": 1.0, "ev": None},   # sin presupuesto
     ]
     out = PR.avances_por_lista(filas, D(2026, 11, 3))
     assert out == {"a": {D(2026, 11, 1): 0.2, D(2026, 10, 25): 0.1}, "b": {D(2026, 10, 26): 0.4}}
