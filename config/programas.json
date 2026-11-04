@@ -9,6 +9,7 @@
           "nombre": "Monitoreo Salud Estructural Los Colorados",
           "codigo": "PJ-2025.0019",
           "patron_fase": "0019|MLC|Colorados",
+          "informe_ancla": {"numero": 8, "periodo": "2026-07", "_doc": "IM-08 informa julio 2026 (se elabora desde el 10-ago): IM-10 = septiembre, plazo 20-oct"},
           "presupuesto": {"hh_periodo": null, "hh_mes": null, "periodo_inicio": "2025-03-31", "periodo_fin": "2026-10-20",
                           "_pendiente": "cifra de HH contratadas y si es anual o mensual (Ale, 2026-10-02)"}
         },
@@ -16,6 +17,7 @@
           "nombre": "Monitoreo Apilador móvil",
           "codigo": "PJ-2025.0147",
           "patron_fase": "0147|Apilador",
+          "informe_ancla": {"numero": 3, "periodo": "2026-07", "_doc": "IM-03 informa julio 2026 (se elabora desde el 10-ago): IM-05 = septiembre, plazo 20-oct"},
           "presupuesto": {"hh_periodo": null, "hh_mes": null, "periodo_inicio": "2025-08-04", "periodo_fin": "2026-10-20",
                           "_pendiente": "cifra de HH contratadas y si es anual o mensual (Ale, 2026-10-02)"}
         }
@@ -35,13 +37,18 @@
         {"list_id": "901327789183", "linea": "general", "contrato": "0147", "solo_consumo": true, "_nombre": "PJ-2025.0147 Diagnóstico Monitoreo Apilador móvil (finalizada)"}
       ],
       "entregables": {
-        "informe": {"patron": "^\\s*IM-\\d", "frecuencia": "mensual"},
-        "visita": {"patron": "^\\s*VT-\\d", "frecuencia": "evento"},
+        "informe": {"patron": "^\\s*IM-\\d", "frecuencia": "mensual", "plazo_dia_mes_siguiente": 20,
+                    "paso_entrega": "Informe\\s*Rev\\.?\\s*B\\b",
+                    "_plazo": "el 20 del mes siguiente al período, igual en los dos contratos; entregado al cerrar la subtarea «Informe Rev. B» (envío al cliente) o, sin ella, al cerrar la tarea (Ale, 2026-11-04)"},
+        "visita": {"patron": "^\\s*VT-\\d", "frecuencia": "evento", "paso_terreno": "Trabajos en Terreno",
+                   "seguir_fechas": true,
+                   "_seguir_fechas": "historial de fechas en programa_fechas: reprogramaciones desde el 2026-11-04 (ClickUp no entrega las anteriores)"},
         "reporte_diario": {"patron": "^\\s*RD-\\d", "frecuencia": "mensual"},
         "reporte_alerta": {"patron": "^\\s*R[AE]-\\d", "frecuencia": "evento", "_alias": "RE (Reporte de Evento) = RA (Ale, 2026-10-06)"}
       },
       "_entregables": "mensual: un paquete por mes (los RD diarios dentro del paquete no cuentan aparte); evento: uno por evento, con su plazo como fecha de entrega (Ale, 2026-10-06)",
       "entregables_excluir_lineas": ["modelos"],
+      "reportes_diarios": {"list_id": "901329132533", "_nombre": "Reportes diarios | CMP Los Colorados (08:00 y 17:00)"},
       "compartidas_aceptadas": [
         {"list_id": "901327789240", "fase": "Desarrollo general", "_motivo": "modelación que sirve a los dos contratos; sus horas siguen en hh_compartidas, sin advertencia (Ale, 2026-10-06)"}
       ],
@@ -74,7 +81,11 @@
         {"list_id": "901326861385", "linea": "servicio", "contrato": "0321", "_nombre": "PJ-2025.0321 | Extensión 2026 AITO HPC | Servicio de Salud Metropolitano Sur Oriente"},
         {"list_id": "1400570000002735", "linea": "cartas", "contrato": "0321", "_nombre": "PJ-2025.0321 |Cartas AITO HPC | Servicio de Salud Metropolitano Sur Oriente"}
       ],
-      "entregables": {},
+      "entregables": {
+        "oficio": {"patron": "^\\s*Revisi[oó]n\\s+Oficios\\b", "frecuencia": "semanal", "solo_hojas": true},
+        "visita": {"patron": "^\\s*Visita\\s+\\d", "frecuencia": "evento", "seguir_fechas": true}
+      },
+      "_entregables": "oficio: las semanas S1..S5 de cada mes (o el mes, si no se dividió en semanas); visita: visitas del Revisor Técnico (2026-11-04)",
       "advertencias_omitidas": [
         "proyecto_con_termino_vencido", "sin_termino_vigente", "horas_fuera_de_plazo",
         "en_planificacion", "sin_tarea_1_2", "tarea_1_2_no_aplica", "varias_tareas_1_2", "linea_base_sin_hh",
@@ -101,7 +112,11 @@
         {"list_id": "901327681515", "linea": "servicio", "contrato": "0008", "_nombre": "PJ-2024.0008 | AITO Hospital Sotero del Río"},
         {"list_id": "1400570000002734", "linea": "cartas", "contrato": "0008", "_nombre": "PJ-2024.0008 | Cartas Hospital Sotero del Río"}
       ],
-      "entregables": {},
+      "entregables": {
+        "oficio": {"patron": "^\\s*Respuesta\\s+a\\s+Oficio\\b(?!\\s+Anteriores)", "frecuencia": "semanal", "solo_hojas": true},
+        "visita": {"patron": "^\\s*Visita\\s+\\d", "frecuencia": "evento", "seguir_fechas": true}
+      },
+      "_entregables": "oficio: las semanas S1..S5 de cada mes (o el mes, si no se dividió en semanas); visita: visitas del Revisor Técnico (2026-11-04)",
       "advertencias_omitidas": [
         "proyecto_con_termino_vencido", "sin_termino_vigente", "horas_fuera_de_plazo",
         "en_planificacion", "sin_tarea_1_2", "tarea_1_2_no_aplica", "varias_tareas_1_2", "linea_base_sin_hh",

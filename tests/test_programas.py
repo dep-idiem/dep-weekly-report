@@ -194,8 +194,8 @@ def test_reportes_diarios_y_de_alerta():
                                                                                             D(2026, 9, 1))
     assert (por["ra1"]["frecuencia"], por["ra1"]["situacion"], por["ra1"]["dias_atraso"]) == (PG.EVENTO, PG.VENCIDO, 3)
     assert por["ra2"]["situacion"] == PG.A_TIEMPO and por["ra2"]["contrato"] == "0019"
-    with pytest.raises(ValueError, match="frecuencia semanal"):
-        PG.desde_dict("X", {**CONFIG, "entregables": {"x": {"patron": "^X-", "frecuencia": "semanal"}}})
+    with pytest.raises(ValueError, match="frecuencia quincenal"):
+        PG.desde_dict("X", {**CONFIG, "entregables": {"x": {"patron": "^X-", "frecuencia": "quincenal"}}})
 
 
 def test_fusion_de_las_pestanas_del_programa():

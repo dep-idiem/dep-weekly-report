@@ -131,6 +131,8 @@ def fusionar(tabla: str, existentes: Sequence[dict], nuevas: Sequence[dict], cor
     en_alcance = (lambda f: True) if alcance is None else (lambda f: f.get("list_id") in alcance)
     if tabla in E.PROGRAMAS:
         return list(existentes) if alcance is not None else list(nuevas)
+    if tabla in E.HISTORIAL_PROGRAMAS:
+        return list(existentes) + ([] if alcance is not None else list(nuevas))
     if tabla in E.REEMPLAZO_TOTAL:
         return [f for f in existentes if not en_alcance(f)] + list(nuevas)
     if tabla in E.SOLO_OFICIAL:

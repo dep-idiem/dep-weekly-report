@@ -31,7 +31,7 @@ from dep_clickup.naming import list_code
 from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, presentacion as PR, proyecto as P
 from . import horas as H, personas as PERS, reproceso as REP, resolucion as RES
 from . import estructura as EST, finalizados as FIN, metricas as MT, plan_semanal as PS, presupuesto as PRES
-from . import plan_vs_real as PVR, programada as PROG, programas as PG, v2 as V2
+from . import plan_vs_real as PVR, programada as PROG, programas as PG, reportes_diarios as RD, v2 as V2
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
 from .config_reportes import (DRY_RUN_DIR, FOLDER_PJ_INGENIERIA, FOLDER_PROYECTOS_FINALIZADOS, IMPORTADAS, RESPALDOS_DIR,
@@ -141,6 +141,7 @@ class Corrida:
     reproceso: REP.Reproceso | None = None                     # corte oficial ya escrito: recalculo desde fotos
     tt_historico: dict = field(default_factory=dict)           # list_id -> [(fecha, horas)] del saldo historico
     programas: dict = field(default_factory=dict)              # programa -> resumen (programas.py)
+    reportes_diarios: dict = field(default_factory=dict)       # programa -> (tareas, tiempo en estado) (reportes_diarios.py)
     plan_vs_real: list = field(default_factory=list)           # filas por persona (hoja aparte)
     filas_plan_vs_real: int | None = None                      # filas escritas en la hoja aparte
 
@@ -406,20 +407,33 @@ def aviso_fuera_de_folders(list_id: str, idn: dict, ubic: dict, corte: dt.date, 
             "estado_proyecto": FIN.FUERA_DE_FOLDERS}
 
 
-def filas_programa(p: PG.Programa, c: "Corrida", corte: dt.date, tipo_corte: str) -> dict[str, list[dict]]:
+def filas_programa(p: PG.Programa, c: "Corrida", corte: dt.date, tipo_corte: str,
+                   fechas_previas: Sequence[dict] = ()) -> dict[str, list[dict]]:
     """Pestañas del programa (programas.py) con las horas que el reporte conto en cada lista y el saldo historico del
-    Timetracker de cada lista. Deja un resumen en c.programas."""
+    Timetracker de cada lista, sus pasos, el historial de fechas (fechas_previas: programa_fechas ya escrita) y los
+    reportes diarios (reportes_diarios.py). Deja un resumen en c.programas."""
     rs = [r for r in c.listas if r.lista.id in p.listas]
     por_id = {r.lista.id: r for r in rs}
     responsables = {r.lista.id: r.jp.username if r.jp else SIN_JP for r in rs}
     horas: list[PG.HoraPrograma] = []
     entregables: list[dict] = []
+    pasos: list[dict] = []
     for r in rs:
         corte_r = r.situacion.corte_cierre if r.situacion.congelado else corte
         horas += PG.horas_de_lista(p, r.lista.id, r.tareas, [(h.fecha, h.horas, h.tarea_id) for h in r.horas
                                                                if h.fecha <= corte_r],
                                    c.tt_historico.get(r.lista.id, []))
-        entregables += PG.filas_entregables(p, r.lista.id, r.tareas, corte, tipo_corte, responsables[r.lista.id])
+        de_lista = PG.filas_entregables(p, r.lista.id, r.tareas, corte, tipo_corte, responsables[r.lista.id])
+        entregables += de_lista
+        pasos += PG.filas_pasos(p, de_lista, r.tareas)
+    previas = [f for f in fechas_previas if f.get("programa") == p.id]
+    fechas = PG.filas_fechas(entregables, previas, p.reglas, corte, tipo_corte)
+    reprog = PG.reprogramaciones([*previas, *fechas])
+    for e in entregables:
+        x = reprog.get(e["task_id"])
+        e["n_reprogramaciones"] = x["n"] if x else None
+        e["fecha_original"] = x["fecha_original"] if x else None
+    rd = RD.filas(p.id, p.nombre, p.cliente, *c.reportes_diarios[p.id], corte, tipo_corte)         if p.id in c.reportes_diarios else []
 
     def total(pred) -> float:
         return round(sum(h.horas for h in horas if pred(h) and h.fecha <= corte), 2)
@@ -431,6 +445,7 @@ def filas_programa(p: PG.Programa, c: "Corrida", corte: dt.date, tipo_corte: str
         "horas_por_linea": {l: total(lambda h, l=l: h.linea == l and h.en_vista) for l in [*p.lineas, PG.HISTORIAL]},
         "horas_solo_consumo": total(lambda h: not h.en_vista),
         "entregables": dict(Counter(f["situacion"] for f in entregables)),
+        "pasos": len(pasos), "fechas_nuevas": len(fechas), "reportes_diarios": len(rd),
         "contratos_sin_presupuesto": [k.id for k in p.contratos.values() if k.ritmo is None],
     }
     # Advertencias para Administracion DEP: horas "compartido" (nivel programa) y limpieza de entregables. Las fases
@@ -458,7 +473,8 @@ def filas_programa(p: PG.Programa, c: "Corrida", corte: dt.date, tipo_corte: str
     c.programas[p.id]["advertencias"] = dict(Counter(a["tipo"] for a in advertencias))
     return {"programa_horas": PG.filas_horas(p, horas, corte, tipo_corte, responsables),
             "programa_contratos": PG.filas_contratos(p, horas, corte, tipo_corte),
-            "programa_entregables": entregables, "advertencias": advertencias}
+            "programa_entregables": entregables, "programa_pasos": pasos, "programa_fechas": fechas,
+            "programa_reportes_diarios": rd, "advertencias": advertencias}
 
 
 def identificacion(r: ResultadoLista) -> dict:
@@ -701,7 +717,10 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
             nuevas[t] += filas
     if not solo:
         for p in programas.values():
-            for t, filas in filas_programa(p, corrida, corte, tipo_corte).items():
+            if p.reportes_diarios:
+                corrida.reportes_diarios[p.id] = RD.leer(cu, p.reportes_diarios)
+            for t, filas in filas_programa(p, corrida, corte, tipo_corte,
+                                           existentes.get("programa_fechas", [])).items():
                 nuevas[t] += filas
     n_lb = len({(f["list_id"], f["rev"]) for f in nuevas["linea_base"] if f["tipo"] != "incremental"})
     n_inc = sum(1 for f in nuevas["linea_base"] if f["tipo"] == "incremental")

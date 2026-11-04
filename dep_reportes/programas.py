@@ -18,10 +18,22 @@ Tres pestañas, que se reemplazan completas en cada corrida (salvo con --solo):
 - programa_contratos: por contrato y mes, horas del mes y acumuladas frente al ritmo planificado
   (HH del periodo / meses del periodo; vacio mientras no haya presupuesto en la config), y las horas "compartido"
   del programa en ese mes (no son de ningun contrato: no se suman entre contratos);
-- programa_entregables: entregables por prefijo del nombre (IM, VT, RD, RA...), con su situacion frente a la fecha de
-  entrega y su frecuencia ("mensual": un paquete por mes; "evento": uno por evento, con plazo). Una tarea cuyo ancestro
+- programa_entregables: entregables por prefijo del nombre (IM, VT, RD, RA...), con su situacion frente al plazo y su
+  frecuencia ("mensual": un paquete por mes; "evento": uno por evento, con plazo; "semanal"). Una tarea cuyo ancestro
   ya es un entregable del mismo tipo no cuenta aparte (los RD diarios dentro del paquete mensual). Las lineas de
   entregables_excluir_lineas no aportan entregables (sus horas si cuentan en la linea).
+  Plazo: el vencimiento de ClickUp o, con plazo_dia_mes_siguiente (informes), el dia N del mes siguiente al periodo; el
+  periodo sale del numero del informe y del ancla del contrato (contratos.<id>.informe_ancla: IM-<numero> = <periodo>).
+  Entregado: al cerrar la subtarea que calza con paso_entrega (p. ej. "Informe Rev. B"; si no la tiene, al cerrar la
+  tarea). Avance = subtareas cerradas / subtareas que aplican. paso_terreno (visitas): la subtarea con las fechas en
+  terreno y sus asignados.
+- programa_pasos: las subtareas de cada entregable (pasos del informe o de la visita), con sus fechas y los dias entre
+  el cierre de un paso y el del anterior.
+
+Una pestaña que solo agrega filas (no se reemplaza):
+- programa_fechas: historial de fechas de los entregables con seguir_fechas (visitas): una fila cada vez que una fecha
+  cambia frente a la ultima registrada (la primera corrida registra la vigente). ClickUp no entrega ese historial: las
+  reprogramaciones se ven desde que se registra.
 
 Advertencias para Administracion DEP (run.filas_programa): horas "compartido" en fases no aceptadas como compartidas
 (nivel programa, con las fases de origen; compartidas_aceptadas en la config, p. ej. "Desarrollo general" de Modelos,
@@ -51,8 +63,12 @@ ABIERTAS = (VENCIDO, PENDIENTE, SIN_FECHA)
 PLANTILLA = r"N[°º]\s*[a-z]\b"          # "VT-02 Visita N°x": numero sin completar
 CODIGO_ENTREGABLE = re.compile(r"^\s*([A-Za-z]+-\d+(?:\.\d+)?)")
 DIAS_CIERRE_ANTICIPADO = 30
-MENSUAL, EVENTO = "mensual", "evento"
-FRECUENCIAS = (MENSUAL, EVENTO)
+MENSUAL, EVENTO, SEMANAL = "mensual", "evento", "semanal"
+FRECUENCIAS = (MENSUAL, EVENTO, SEMANAL)
+REGLA, CLICKUP_DUE = "regla", "clickup"          # origen del plazo
+NUMERO_INFORME = re.compile(r"^\s*[A-Za-z]+-(\d+)(?![.\d])")   # "IM-10 ..." -> 10 (no "IM-06.0")
+NO_APLICA = "no aplica"
+CAMPOS_FECHA = ("vencimiento", "terreno_inicio", "terreno_fin")
 
 
 @dataclass(frozen=True)
@@ -65,6 +81,14 @@ class Contrato:
     hh_mes: float | None = None
     periodo_inicio: dt.date | None = None
     periodo_fin: dt.date | None = None
+    informe_ancla: tuple[int, dt.date] | None = None    # (numero, periodo): IM-<numero> informa el mes <periodo>
+
+    def periodo_informe(self, numero: int) -> dt.date | None:
+        if not self.informe_ancla:
+            return None
+        n, m = self.informe_ancla
+        k = m.year * 12 + m.month - 1 + numero - n
+        return dt.date(k // 12, k % 12 + 1, 1)
 
     @property
     def meses_periodo(self) -> int | None:
@@ -114,6 +138,8 @@ class Programa:
     dias_cierre_anticipado: int = DIAS_CIERRE_ANTICIPADO
     frecuencias: dict[str, str] = field(default_factory=dict)    # tipo de entregable -> mensual / evento
     compartidas_aceptadas: frozenset[tuple[str, str]] = frozenset()  # (list_id, fase en minusculas): sin advertencia
+    reglas: dict[str, "ReglaEntregable"] = field(default_factory=dict)  # tipo de entregable -> plazo y pasos
+    reportes_diarios: str | None = None     # lista de los reportes diarios (reportes_diarios.py)
 
     def compartida_aceptada(self, list_id: str, fase: str) -> bool:
         return (list_id, (fase or "").strip().lower()) in self.compartidas_aceptadas
@@ -137,18 +163,40 @@ class Programa:
         return NOMBRE_HISTORIAL if linea == HISTORIAL else self.lineas.get(linea, linea)
 
 
+@dataclass(frozen=True)
+class ReglaEntregable:
+    plazo_dia_mes_siguiente: int | None = None     # informes: el dia N del mes siguiente al periodo
+    paso_entrega: re.Pattern | None = None          # subtarea cuyo cierre es la entrega
+    paso_terreno: re.Pattern | None = None          # subtarea con las fechas en terreno (visitas)
+    seguir_fechas: bool = False                     # historial de fechas en programa_fechas
+    solo_hojas: bool = False                        # cuenta las tareas sin entregables del mismo tipo debajo (las
+                                                    # semanas S1..S5 de un mes, o el mes si no se dividio)
+
+
 def _fecha(x) -> dt.date | None:
     return dt.date.fromisoformat(x) if x else None
+
+
+def _mes_iso(x: str) -> dt.date:
+    return dt.date.fromisoformat(x + "-01" if len(x) == 7 else x).replace(day=1)
+
+
+def _regla(v: Mapping) -> ReglaEntregable:
+    rx = lambda k: re.compile(v[k], re.I) if v.get(k) else None
+    return ReglaEntregable(v.get("plazo_dia_mes_siguiente"), rx("paso_entrega"), rx("paso_terreno"),
+                           bool(v.get("seguir_fechas")), bool(v.get("solo_hojas")))
 
 
 def desde_dict(pid: str, d: Mapping) -> Programa:
     contratos = {}
     for cid, c in d.get("contratos", {}).items():
         p = c.get("presupuesto") or {}
+        a = c.get("informe_ancla")
         contratos[cid] = Contrato(cid, c.get("nombre", cid), c.get("codigo", ""),
                                   re.compile(c["patron_fase"], re.I) if c.get("patron_fase") else None,
                                   p.get("hh_periodo"), p.get("hh_mes"), _fecha(p.get("periodo_inicio")),
-                                  _fecha(p.get("periodo_fin")))
+                                  _fecha(p.get("periodo_fin")),
+                                  (int(a["numero"]), _mes_iso(a["periodo"])) if a else None)
     listas = {}
     for l in d.get("listas", []):
         for campo in ("contrato", "contrato_por_defecto"):
@@ -160,7 +208,7 @@ def desde_dict(pid: str, d: Mapping) -> Programa:
             raise ValueError(f"programa {pid}: la lista {l['list_id']} tiene la línea {l['linea']} sin definir")
         listas[l["list_id"]] = ListaPrograma(l["list_id"], l["linea"], l.get("contrato"), bool(l.get("solo_consumo")),
                                              l.get("contrato_por_defecto"))
-    patrones, frecuencias = {}, {}
+    patrones, frecuencias, reglas = {}, {}, {}
     for tipo, v in (d.get("entregables") or {}).items():
         v = {"patron": v} if isinstance(v, str) else v       # forma corta: solo el patron (frecuencia "evento")
         frecuencias[tipo] = v.get("frecuencia", EVENTO)
@@ -168,13 +216,15 @@ def desde_dict(pid: str, d: Mapping) -> Programa:
             raise ValueError(f"programa {pid}: el entregable {tipo} tiene frecuencia {frecuencias[tipo]} "
                              f"(válidas: {', '.join(FRECUENCIAS)})")
         patrones[tipo] = re.compile(v["patron"], re.I)
+        reglas[tipo] = _regla(v)
     return Programa(pid, d.get("nombre", pid), d.get("cliente", ""), contratos, dict(d.get("lineas", {})), listas,
                     patrones,
                     frozenset(d.get("advertencias_omitidas") or ()),
                     frozenset(d.get("entregables_excluir_lineas") or ()),
                     re.compile(d.get("patron_plantilla") or PLANTILLA, re.I),
                     int(d.get("dias_cierre_anticipado", DIAS_CIERRE_ANTICIPADO)), frecuencias,
-                    _compartidas_aceptadas(pid, d, listas))
+                    _compartidas_aceptadas(pid, d, listas), reglas,
+                    (d.get("reportes_diarios") or {}).get("list_id"))
 
 
 def _compartidas_aceptadas(pid: str, d: Mapping, listas: Mapping[str, ListaPrograma]) -> frozenset[tuple[str, str]]:
@@ -380,23 +430,155 @@ def filas_entregables(p: Programa, list_id: str, tareas: Sequence[Task], corte: 
                 return True
         return False
 
+    hijos: dict[str, list[Task]] = defaultdict(list)
+    for t in tareas:
+        if t.parent:
+            hijos[t.parent].append(t)
+    padres_del_tipo = set()
+    for t in tareas:
+        x, vistos = t, set()
+        while tipo_de[t.id] and x.parent in por_id and x.parent not in vistos:
+            vistos.add(x.parent)
+            x = por_id[x.parent]
+            if tipo_de[x.id] == tipo_de[t.id]:
+                padres_del_tipo.add(x.id)
     out = []
     for t in tareas:
         tipo = tipo_de[t.id]
-        if tipo is None or dentro_de_otro(t):
+        if tipo is None:
             continue
+        regla = p.reglas.get(tipo, ReglaEntregable())
+        if (t.id in padres_del_tipo) if regla.solo_hojas else dentro_de_otro(t):
+            continue
+        c = p.contrato_de(list_id, fases.get(t.id))
         due = t.due_date
         hecho = t.date_done.date() if t.date_done else None
-        sit, atraso = situacion(t.cerrada, due, hecho, corte)
-        c = p.contrato_de(list_id, fases.get(t.id))
+        pasos = ordenar_pasos(hijos.get(t.id, []))
+        aplican = [x for x in pasos if not es_no_aplica(x)]
+        # Periodo y plazo
+        periodo = plazo = None
+        n = NUMERO_INFORME.match(t.name or "")
+        if regla.plazo_dia_mes_siguiente and n and c in p.contratos:
+            periodo = p.contratos[c].periodo_informe(int(n.group(1)))
+        if periodo:
+            sig = (periodo + dt.timedelta(days=32)).replace(day=1)
+            plazo, origen = sig.replace(day=min(regla.plazo_dia_mes_siguiente, 28)), REGLA
+        else:
+            plazo, origen = due, CLICKUP_DUE if due else ""
+        # Entrega: cierre del paso de entrega o, si no lo tiene, de la tarea
+        paso_e = next((x for x in pasos if regla.paso_entrega and regla.paso_entrega.search(x.name or "")), None)
+        if paso_e is not None:
+            entregado, f_entrega = paso_e.cerrada, paso_e.date_done.date() if paso_e.date_done else None
+        else:
+            entregado, f_entrega = t.cerrada, hecho
+        sit, atraso = situacion(entregado, plazo, f_entrega, corte)
+        # Inicio: inicio de la tarea o, si no tiene, el de su primer paso con fecha
+        inicio = t.start_date or min((x.start_date for x in pasos if x.start_date), default=None)
+        terreno = next((x for x in pasos if regla.paso_terreno and regla.paso_terreno.search(x.name or "")), None)
+        abierto = next((x for x in aplican if not x.cerrada), None)
+        cerrados = sum(1 for x in aplican if x.cerrada)
         out.append({**base, "contrato": c, "contrato_nombre": p.nombre_contrato(c), "linea": lp.linea,
                     "linea_nombre": p.nombre_linea(lp.linea), "responsable_linea": responsable, "list_id": list_id,
                     "task_id": t.id, "tipo_entregable": tipo, "frecuencia": p.frecuencias.get(tipo, EVENTO),
                     "nombre": t.name.strip(), "fase": fases.get(t.id, ""),
                     "estado": t.status, "fecha_entrega": due, "fecha_cierre": hecho,
-                    "mes": mes(due or hecho) if (due or hecho) else None, "situacion": sit, "dias_atraso": atraso,
-                    "url": t.url})
+                    "mes": mes(plazo or hecho) if (plazo or hecho) else None, "situacion": sit, "dias_atraso": atraso,
+                    "url": t.url,
+                    "periodo": periodo, "plazo": plazo, "origen_plazo": origen, "entregado": entregado,
+                    "fecha_entregado": f_entrega if entregado else None, "inicio": inicio,
+                    "dias_elaboracion": (f_entrega - inicio).days if entregado and f_entrega and inicio else None,
+                    "pasos_total": len(aplican) or None,
+                    "pasos_cerrados": cerrados if aplican else None,
+                    "avance": round(cerrados / len(aplican), 4) if aplican else (1.0 if entregado else None),
+                    "paso_actual": abierto.name.strip() if abierto else "",
+                    "terreno_inicio": (terreno.start_date or terreno.due_date) if terreno else None,
+                    "terreno_fin": (terreno.due_date or terreno.start_date) if terreno else None,
+                    "asignados_terreno": ", ".join(terreno.assignees or t.assignees) if terreno else "",
+                    "n_reprogramaciones": None, "fecha_original": None})     # del historial (run.filas_programa)
     return out
+
+
+def es_no_aplica(t: Task) -> bool:
+    return (t.status or "").strip().lower() == NO_APLICA
+
+
+_ORDEN = re.compile(r"^\s*[A-Za-z]?\.?(\d+(?:\.\d+)*)")
+
+
+def ordenar_pasos(pasos: Sequence[Task]) -> list[Task]:
+    """Subtareas por su codigo ("B.2" antes que "B.10"); las sin codigo, al final por nombre."""
+    def clave(t: Task):
+        m = _ORDEN.match(t.name or "")
+        return (0, tuple(int(x) for x in m.group(1).split(".")), t.name) if m else (1, (), t.name or "")
+    return sorted(pasos, key=clave)
+
+
+def filas_pasos(p: Programa, entregables: Sequence[dict], tareas: Sequence[Task]) -> list[dict]:
+    """programa_pasos: una fila por subtarea directa de cada entregable, en orden, con los dias entre su cierre y el
+    del ultimo paso cerrado antes (por orden)."""
+    por_padre: dict[str, list[Task]] = defaultdict(list)
+    for t in tareas:
+        if t.parent:
+            por_padre[t.parent].append(t)
+    out = []
+    for e in entregables:
+        anterior = None
+        for i, x in enumerate(ordenar_pasos(por_padre.get(e["task_id"], [])), 1):
+            na = es_no_aplica(x)
+            cierre = x.date_done.date() if x.cerrada and x.date_done and not na else None
+            out.append({k: e[k] for k in ("corte", "tipo_corte", "programa", "programa_nombre", "cliente", "contrato",
+                                          "contrato_nombre", "list_id", "tipo_entregable")}
+                       | {"task_id": e["task_id"], "entregable": e["nombre"], "paso_id": x.id,
+                          "paso": x.name.strip(), "orden": i, "estado": x.status, "no_aplica": na,
+                          "cerrado": x.cerrada and not na, "inicio": x.start_date, "vencimiento": x.due_date,
+                          "fecha_cierre": cierre,
+                          "dias_desde_anterior": (cierre - anterior).days if cierre and anterior else None,
+                          "url": x.url})
+            if cierre:
+                anterior = cierre
+    return out
+
+
+def filas_fechas(entregables: Sequence[dict], previas: Sequence[dict], reglas: Mapping[str, ReglaEntregable],
+                 corte: dt.date, tipo_corte: str) -> list[dict]:
+    """programa_fechas (solo agrega): las fechas de los entregables con seguir_fechas que cambiaron frente a la ultima
+    registrada (o que no estaban registradas)."""
+    ultima: dict[tuple[str, str], dict] = {}
+    for f in sorted(previas, key=lambda f: (f.get("detectado_en") or dt.date.min)):
+        ultima[(f["task_id"], f["campo"])] = f
+    out = []
+    for e in entregables:
+        if not reglas.get(e["tipo_entregable"], ReglaEntregable()).seguir_fechas:
+            continue
+        actuales = {"vencimiento": e["fecha_entrega"], "terreno_inicio": e["terreno_inicio"],
+                    "terreno_fin": e["terreno_fin"]}
+        for campo in CAMPOS_FECHA:
+            prev = ultima.get((e["task_id"], campo))
+            v = actuales[campo]
+            if prev is None and v is None:
+                continue
+            if prev is not None and prev.get("valor") == v:
+                continue
+            out.append({"detectado_en": corte, "tipo_corte": tipo_corte, "programa": e["programa"],
+                        "list_id": e["list_id"], "task_id": e["task_id"], "nombre": e["nombre"],
+                        "tipo_entregable": e["tipo_entregable"], "campo": campo, "valor": v,
+                        "valor_anterior": prev.get("valor") if prev else None})
+    return out
+
+
+def reprogramaciones(historial: Iterable[dict]) -> dict[str, dict]:
+    """task_id -> {"n": cambios de fecha registrados (sin el primer registro), "fecha_original": primer vencimiento
+    o inicio en terreno registrado}."""
+    primera: dict[tuple[str, str], dt.date] = {}
+    n: dict[str, int] = defaultdict(int)
+    for f in sorted(historial, key=lambda f: (f.get("detectado_en") or dt.date.min)):
+        if f.get("valor_anterior") is not None or (f["task_id"], f["campo"]) in primera:
+            n[f["task_id"]] += 1
+        primera.setdefault((f["task_id"], f["campo"]), f.get("valor"))
+    ids = {tid for tid, _ in primera}
+    return {tid: {"n": n.get(tid, 0),
+                  "fecha_original": primera.get((tid, "terreno_inicio")) or primera.get((tid, "vencimiento"))}
+            for tid in ids}
 
 
 

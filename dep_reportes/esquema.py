@@ -131,7 +131,35 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
                              ("task_id", TEXTO), ("tipo_entregable", TEXTO), ("frecuencia", TEXTO), ("nombre", TEXTO),
                              ("fase", TEXTO),
                              ("estado", TEXTO), ("fecha_entrega", FECHA), ("fecha_cierre", FECHA), ("mes", FECHA),
-                             ("situacion", TEXTO), ("dias_atraso", ENTERO), ("url", TEXTO)],
+                             ("situacion", TEXTO), ("dias_atraso", ENTERO), ("url", TEXTO),
+                             # fecha_entrega/fecha_cierre: vencimiento y cierre de la tarea en ClickUp; situacion y
+                             # dias_atraso: frente a `plazo` (regla del dia N del mes siguiente al periodo, o el
+                             # vencimiento) y a la entrega (cierre del paso de entrega o de la tarea).
+                             ("periodo", FECHA), ("plazo", FECHA), ("origen_plazo", TEXTO), ("entregado", BOOLEANO),
+                             ("fecha_entregado", FECHA), ("inicio", FECHA), ("dias_elaboracion", ENTERO),
+                             ("pasos_total", ENTERO), ("pasos_cerrados", ENTERO), ("avance", NUMERO),
+                             ("paso_actual", TEXTO), ("terreno_inicio", FECHA), ("terreno_fin", FECHA),
+                             ("asignados_terreno", TEXTO), ("n_reprogramaciones", ENTERO), ("fecha_original", FECHA)],
+    "programa_pasos": [("corte", FECHA), ("tipo_corte", TEXTO), ("programa", TEXTO), ("programa_nombre", TEXTO),
+                       ("cliente", TEXTO), ("contrato", TEXTO), ("contrato_nombre", TEXTO), ("list_id", TEXTO),
+                       ("tipo_entregable", TEXTO), ("task_id", TEXTO), ("entregable", TEXTO), ("paso_id", TEXTO),
+                       ("paso", TEXTO), ("orden", ENTERO), ("estado", TEXTO), ("no_aplica", BOOLEANO),
+                       ("cerrado", BOOLEANO), ("inicio", FECHA), ("vencimiento", FECHA), ("fecha_cierre", FECHA),
+                       ("dias_desde_anterior", ENTERO), ("url", TEXTO)],
+    # Reportes diarios (reportes_diarios.py): uno por reporte (08:00 y 17:00), con la hora de cada paso y los minutos.
+    "programa_reportes_diarios": [("corte", FECHA), ("tipo_corte", TEXTO), ("programa", TEXTO),
+                                  ("programa_nombre", TEXTO), ("cliente", TEXTO), ("task_id", TEXTO),
+                                  ("nombre", TEXTO), ("fecha", FECHA), ("turno", TEXTO), ("estado", TEXTO),
+                                  ("generado_en", FECHA_HORA), ("revisado_en", FECHA_HORA),
+                                  ("aprobado_en", FECHA_HORA), ("enviado_en", FECHA_HORA), ("observado", BOOLEANO),
+                                  ("enviado", BOOLEANO), ("cerrado_sin_aprobar", BOOLEANO), ("revisado_por", TEXTO),
+                                  ("aprobado_por", TEXTO), ("min_generacion_revision", NUMERO),
+                                  ("min_revision_aprobacion", NUMERO), ("min_aprobacion_envio", NUMERO),
+                                  ("min_generacion_envio", NUMERO), ("url", TEXTO)],
+    # Historial de fechas de visitas (programas.filas_fechas): solo se agregan filas, una por cambio detectado.
+    "programa_fechas": [("detectado_en", FECHA), ("tipo_corte", TEXTO), ("programa", TEXTO), ("list_id", TEXTO),
+                        ("task_id", TEXTO), ("nombre", TEXTO), ("tipo_entregable", TEXTO), ("campo", TEXTO),
+                        ("valor", FECHA), ("valor_anterior", FECHA)],
     "ejecuciones": [("ejecutado_en", FECHA_HORA), ("corte", FECHA), ("tipo_corte", TEXTO), ("modo", TEXTO),
                     ("n_proyectos", ENTERO),
                     ("n_lineas_base_nuevas", ENTERO), ("resultado", TEXTO), ("detalle_error", TEXTO),
@@ -147,7 +175,9 @@ POR_CORTE = {"metricas_semanales", "metricas_fase", "advertencias", "plan_semana
 SOLO_OFICIAL = {"fotos_tareas"}                           # solo corridas oficiales; se reemplaza el corte
 SOLO_AGREGAR = {"linea_base", "ejecuciones"}
 POR_LISTA = {"cierres"}                                   # una fila por lista (finalizados.fusionar_cierres)
-PROGRAMAS = {"programa_horas", "programa_contratos", "programa_entregables"}   # completas; con --solo no se tocan
+PROGRAMAS = {"programa_horas", "programa_contratos", "programa_entregables", "programa_pasos",
+             "programa_reportes_diarios"}                 # completas; con --solo no se tocan
+HISTORIAL_PROGRAMAS = {"programa_fechas"}                 # solo se agregan filas; con --solo no se tocan
 CON_ULTIMO_CORTE = {t for t, cols in TABLAS.items() if any(c == "es_ultimo_corte" for c, _ in cols)}
 CON_TIPO_CORTE = {t for t, cols in TABLAS.items() if any(c == "tipo_corte" for c, _ in cols)}
 # Tablas cuyas filas llevan la identificacion del proyecto (se recalcula al escribir, tambien en filas antiguas).
@@ -170,6 +200,9 @@ CLAVES = {
     "programa_horas": ("programa", "mes", "contrato", "linea", "list_id", "origen"),
     "programa_contratos": ("programa", "contrato", "mes"),
     "programa_entregables": ("programa", "list_id", "task_id"),
+    "programa_pasos": ("programa", "task_id", "paso_id"),
+    "programa_reportes_diarios": ("programa", "task_id"),
+    "programa_fechas": ("task_id", "campo", "detectado_en"),
 }
 
 
