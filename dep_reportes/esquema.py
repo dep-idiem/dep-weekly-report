@@ -87,7 +87,9 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
     "serie_diaria": [("corte", FECHA), ("tipo_corte", TEXTO), ("list_id", TEXTO)] + IDENT
                     + [("fecha", FECHA), ("hh_prog_acum", NUMERO),
                                                     ("hh_gastadas_acum", NUMERO), ("hh_proyectadas_acum", NUMERO),
-                                                    ("hh_linea_base", NUMERO)],
+                                                    ("hh_linea_base", NUMERO),
+                    # avance real de cada corte x HH totales, escalonado (presentacion.hh_ganadas)
+                    ("hh_ganadas_acum", NUMERO)],
     "advertencias": [("corte", FECHA)] + CORTE + [("list_id", TEXTO)] + IDENT
                     + [("tipo", TEXTO), ("nivel", TEXTO), ("task_id", TEXTO), ("detalle", TEXTO), ("mensaje", TEXTO),
                        ("como_resolver", TEXTO), ("responsable_accion", TEXTO), ("impacto", TEXTO),

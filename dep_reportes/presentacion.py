@@ -509,3 +509,40 @@ def mensaje(tipo: str, tarea: str | None = None, datos: Mapping | None = None) -
             return f"El Timetracker tiene {num(d['horas'])} h de este proyecto{desde} que no están registradas en ClickUp"
         return "El Timetracker tiene horas de este proyecto que no están registradas en ClickUp"
     return "Advertencia sin descripción"
+
+
+# --- Avance ganado en la curva S ----------------------------------------------------------------
+
+def avances_por_lista(semanales: Sequence[Mapping], corte: dt.date) -> dict[str, dict[dt.date, float]]:
+    """list_id -> {corte anterior: avance_real} desde metricas_semanales guardadas (el corte en curso se omite: su
+    avance sale de la corrida). Con un oficial y un preliminar del mismo dia manda el oficial."""
+    out: dict[str, dict[dt.date, float]] = {}
+    oficial: set[tuple[str, dt.date]] = set()
+    for f in semanales:
+        c, lid, av = f.get("corte"), f.get("list_id"), f.get("avance_real")
+        if not (isinstance(c, dt.date) and lid and isinstance(av, (int, float))) or c >= corte:
+            continue
+        if (lid, c) in oficial:
+            continue
+        if f.get("tipo_corte") == "oficial":
+            oficial.add((lid, c))
+        out.setdefault(lid, {})[c] = float(av)
+    return out
+
+
+def hh_ganadas(fechas: Sequence[dt.date], avances: Mapping[dt.date, float], corte: dt.date,
+               avance_corte: float | None, total_hh: float | None) -> list[float | None]:
+    """HH ganadas acumuladas (avance real x HH totales) en cada fecha de la serie: escalonada, con el avance del
+    ultimo corte <= fecha. Vacio antes del primer corte, despues del corte en curso o sin HH totales. Se usa el
+    total vigente en todos los cortes para que quede en la misma escala que la curva programada."""
+    if not total_hh:
+        return [None] * len(fechas)
+    puntos = sorted({**avances, **({corte: avance_corte} if avance_corte is not None else {})}.items())
+    out: list[float | None] = []
+    i, actual = 0, None
+    for x in fechas:
+        while i < len(puntos) and puntos[i][0] <= x:
+            actual = puntos[i][1]
+            i += 1
+        out.append(round(actual * total_hh, 4) if actual is not None and x <= corte else None)
+    return out

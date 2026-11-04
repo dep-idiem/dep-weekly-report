@@ -487,7 +487,7 @@ def identificacion(r: ResultadoLista) -> dict:
 
 
 def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
-             tipo_corte: str = E.OFICIAL) -> dict[str, list[dict]]:
+             tipo_corte: str = E.OFICIAL, avances_previos: dict[dt.date, float] | None = None) -> dict[str, list[dict]]:
     lid = r.lista.id
     rev = r.lb_filas[0].rev if r.lb_filas else None
     prov = provisional(r)
@@ -534,7 +534,7 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
     if not sit.emite_semanales:
         # Finalizado sin semanas en curso en este corte: la serie diaria (tabla de reemplazo total) y, en el corte
         # en que se detecta, la advertencia "proyecto_finalizado".
-        out["serie_diaria"] += _serie(r, tc, idn)
+        out["serie_diaria"] += _serie(r, tc, idn, corte, avances_previos)
         if sit.avisar:
             out["advertencias"] += [{**a, **tc, **idn} for a in r.advertencias if a["tipo"] == P.ADV_PROYECTO_FINALIZADO]
         return out
@@ -571,20 +571,26 @@ def filas_de(r: ResultadoLista, corte: dt.date, modo: Modo, ahora: dt.datetime,
                                                                                "estado_proyecto")},
                                  **f, "horas_necesarias_semana": r.necesarias.get(f["semana"]) if con_curva else None,
                                  "ritmo_real": ritmo} for f in r.plan_semanal]
-    out["serie_diaria"] += _serie(r, tc, idn)
+    out["serie_diaria"] += _serie(r, tc, idn, corte, avances_previos)
     out["advertencias"] += [{**a, **tc, **idn} for a in r.advertencias]
     out["linea_base"] += [f.fila() for f in r.lb_nuevas]
     return out
 
 
-def _serie(r: ResultadoLista, tc: dict, idn: dict) -> list[dict]:
+def _serie(r: ResultadoLista, tc: dict, idn: dict, corte: dt.date | None = None,
+           avances_previos: dict[dt.date, float] | None = None) -> list[dict]:
+    """Serie de la curva S. hh_ganadas_acum: avance real de cada corte (guardados + el de esta corrida) por las HH
+    totales, escalonado hasta el corte siguiente; es la tercera curva del valor ganado (programado, gastado, ganado)."""
     mt = r.resultado.metricas
     con_prog = bool(r.lb_filas) or provisional(r)
+    serie = r.resultado.serie
+    ganadas = (PR.hh_ganadas([p.fecha for p in serie], avances_previos or {}, corte, mt.get("avance_real"),
+                             mt.get("total_hh")) if con_prog and corte else [None] * len(serie))
     return [{**tc, "list_id": r.lista.id, **idn, "fecha": p.fecha,
              "hh_prog_acum": p.programadas if con_prog else None,
              "hh_gastadas_acum": p.gastadas, "hh_proyectadas_acum": p.proyectadas,
-             "hh_linea_base": mt["total_hh"] if con_prog else None}
-            for p in r.resultado.serie]
+             "hh_linea_base": mt["total_hh"] if con_prog else None, "hh_ganadas_acum": g}
+            for p, g in zip(serie, ganadas)]
 
 
 def provisional(r: ResultadoLista) -> bool:
@@ -712,9 +718,10 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
     corrida.peticiones_clickup = dict(cu.request_log)
 
     nuevas: dict[str, list[dict]] = {t: [] for t in E.TABLAS}
+    avances = PR.avances_por_lista(existentes.get("metricas_semanales", []), corte)
     for r in corrida.listas:
         corte_r = r.situacion.corte_cierre if r.situacion.congelado else corte
-        for t, filas in filas_de(r, corte_r, modo, ahora, tipo_corte).items():
+        for t, filas in filas_de(r, corte_r, modo, ahora, tipo_corte, avances.get(r.lista.id)).items():
             nuevas[t] += filas
     if not solo:
         for p in programas.values():
