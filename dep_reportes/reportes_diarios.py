@@ -10,6 +10,8 @@ La aprobacion sale del campo «Fecha aprobación» (o, si esta vacio, del histor
 ClickUp no guarda los estados de menos de un minuto. Por lo mismo, sin «revisado» en el historial (se paso directo a
 aprobado, o estuvo menos de un minuto) la revision -> aprobacion queda vacia. Un reporte que llego a «enviado» sin
 aprobacion se cerro a mano para no enviarlo: enviado = False.
+es_fin_de_semana: sabado, domingo o feriado (calendario del reporte), para repartir esos turnos entre revisores y
+aprobadores.
 
 Funciones puras salvo leer().
 """
@@ -22,9 +24,12 @@ from typing import Mapping, Sequence
 from dep_clickup.config import TZ
 from dep_clickup.models import Task
 
+from .calendario import SIN_FERIADOS, Calendario
+
 PENDIENTE, OBSERVADO, REVISADO, APROBADO, ENVIADO = "pendiente revisión", "observado", "revisado", "aprobado", "enviado"
 NOMBRE = re.compile(r"(\d{1,2})-(\w{3})-(\d{4})\s*·\s*(\d{2})(\d{2})")
 MESES = {m: i for i, m in enumerate(("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"), 1)}
+DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 LOTE = 100          # tareas por peticion de bulk_time_in_status
 CAMPO_APROBACION = "Fecha aprobación"
 
@@ -76,7 +81,7 @@ def fecha_turno(t: Task) -> tuple[dt.date | None, str]:
 
 
 def filas(programa: str, programa_nombre: str, cliente: str, tareas: Sequence[Task], tis: Mapping[str, dict],
-          corte: dt.date, tipo_corte: str) -> list[dict]:
+          corte: dt.date, tipo_corte: str, cal: Calendario = SIN_FERIADOS) -> list[dict]:
     out = []
     for t in tareas:
         fecha, turno = fecha_turno(t)
@@ -91,6 +96,7 @@ def filas(programa: str, programa_nombre: str, cliente: str, tareas: Sequence[Ta
         enviado = bool(enviado_en and aprobado)
         out.append({"corte": corte, "tipo_corte": tipo_corte, "programa": programa, "programa_nombre": programa_nombre,
                     "cliente": cliente, "task_id": t.id, "nombre": t.name.strip(), "fecha": fecha, "turno": turno,
+                    "dia_semana": DIAS[fecha.weekday()], "es_fin_de_semana": not cal.es_habil(fecha),
                     "estado": t.status, "generado_en": generado, "revisado_en": revisado, "aprobado_en": aprobado,
                     "enviado_en": enviado_en if enviado else None, "observado": OBSERVADO in e,
                     "enviado": enviado, "cerrado_sin_aprobar": bool(enviado_en and not aprobado),

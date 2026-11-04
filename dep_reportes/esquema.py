@@ -149,7 +149,8 @@ TABLAS: dict[str, list[tuple[str, str]]] = {
     # Reportes diarios (reportes_diarios.py): uno por reporte (08:00 y 17:00), con la hora de cada paso y los minutos.
     "programa_reportes_diarios": [("corte", FECHA), ("tipo_corte", TEXTO), ("programa", TEXTO),
                                   ("programa_nombre", TEXTO), ("cliente", TEXTO), ("task_id", TEXTO),
-                                  ("nombre", TEXTO), ("fecha", FECHA), ("turno", TEXTO), ("estado", TEXTO),
+                                  ("nombre", TEXTO), ("fecha", FECHA), ("turno", TEXTO), ("dia_semana", TEXTO),
+                                  ("es_fin_de_semana", BOOLEANO), ("estado", TEXTO),
                                   ("generado_en", FECHA_HORA), ("revisado_en", FECHA_HORA),
                                   ("aprobado_en", FECHA_HORA), ("enviado_en", FECHA_HORA), ("observado", BOOLEANO),
                                   ("enviado", BOOLEANO), ("cerrado_sin_aprobar", BOOLEANO), ("revisado_por", TEXTO),

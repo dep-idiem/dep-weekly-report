@@ -465,10 +465,14 @@ def filas_entregables(p: Programa, list_id: str, tareas: Sequence[Task], corte: 
             plazo, origen = sig.replace(day=min(regla.plazo_dia_mes_siguiente, 28)), REGLA
         else:
             plazo, origen = due, CLICKUP_DUE if due else ""
-        # Entrega: cierre del paso de entrega o, si no lo tiene, de la tarea
+        # Entrega: cierre del paso de entrega; si no lo tiene, el del ultimo paso cuando todos estan cerrados (la
+        # tarea se suele cerrar tarde); si no tiene pasos, el de la tarea
         paso_e = next((x for x in pasos if regla.paso_entrega and regla.paso_entrega.search(x.name or "")), None)
+        cierres_pasos = [x.date_done.date() for x in aplican if x.cerrada and x.date_done]
         if paso_e is not None:
             entregado, f_entrega = paso_e.cerrada, paso_e.date_done.date() if paso_e.date_done else None
+        elif regla.paso_entrega and aplican and all(x.cerrada for x in aplican) and cierres_pasos:
+            entregado, f_entrega = True, max(cierres_pasos)
         else:
             entregado, f_entrega = t.cerrada, hecho
         sit, atraso = situacion(entregado, plazo, f_entrega, corte)

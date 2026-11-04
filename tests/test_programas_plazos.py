@@ -5,6 +5,7 @@ import datetime as dt
 from dep_clickup.config import TZ
 from dep_clickup.models import CustomField, Task
 from dep_reportes import esquema as E, programas as PG, reportes_diarios as RD
+from dep_reportes.calendario import Calendario
 
 D = dt.date
 CORTE = D(2026, 11, 3)
@@ -53,6 +54,11 @@ INFORMES = [
     # IM-04 Apilador = agosto: plazo 20-sep, sin subtareas, cerrado el 25-sep
     tarea("im4", "IM-04 Informe Mensual N°4", "f147", "completado", D(2026, 9, 24), D(2026, 9, 25), "done",
           start=D(2026, 9, 10)),
+    # IM-08 MLC = julio: sin «Rev. B», todos los pasos cerrados el 21-ago y la tarea abierta: entregado el 21-ago
+    tarea("im8", "IM-08 Informe Mensual N°8", "f19", "en progreso", D(2026, 8, 20), start=D(2026, 8, 10)),
+    cerrada("c1", "B.1 Caracterización", "im8", D(2026, 8, 18)),
+    cerrada("c2", "B.2 Borrador Final", "im8", D(2026, 8, 21)),
+    tarea("c3", "B.3 Detección de Anomalías", "im8", "no aplica", tipo="custom"),
     # IM-06.0 no es mensual numerado: plazo = vencimiento de ClickUp
     tarea("laser", "IM-06.0 Informe Levantamiento Láser", "f19", "en progreso", D(2026, 9, 4)),
 ]
@@ -69,7 +75,10 @@ def test_periodo_por_ancla():
 
 def test_informe_plazo_dia_20_y_entrega_por_rev_b():
     por = {f["task_id"]: f for f in PG.filas_entregables(P, "INF", INFORMES, CORTE, E.PRELIMINAR, "x")}
-    assert set(por) == {"im10", "im11", "im4", "laser"}
+    assert set(por) == {"im10", "im11", "im4", "im8", "laser"}
+    i8 = por["im8"]
+    assert (i8["plazo"], i8["entregado"], i8["fecha_entregado"], i8["situacion"], i8["dias_atraso"]) == (
+        D(2026, 8, 20), True, D(2026, 8, 21), PG.ATRASADO, 1)
     f = por["im10"]
     assert (f["contrato"], f["periodo"], f["plazo"], f["origen_plazo"]) == ("0019", D(2026, 9, 1), D(2026, 10, 20),
                                                                            PG.REGLA)
@@ -170,7 +179,8 @@ def test_reportes_diarios_tiempos():
            "r4": _tis(("pendiente revisión", t0), ("aprobado", m(60))),             # sin «revisado»
            # «aprobado» menos de un minuto: no queda en el historial, pero si en «Fecha aprobación»
            "r5": _tis(("pendiente revisión", t0), ("revisado", m(70)), ("enviado", m(96)))}
-    filas = RD.filas("CMP-SHM", "Monitoreo", "CMP", tareas, tis, CORTE, E.PRELIMINAR)
+    cal = Calendario(frozenset({D(2026, 11, 2)}))                                  # feriado de prueba (lunes)
+    filas = RD.filas("CMP-SHM", "Monitoreo", "CMP", tareas, tis, CORTE, E.PRELIMINAR, cal)
     assert [f["task_id"] for f in filas] == ["r5", "r4", "r2", "r1"]                    # sin el del 04-nov (> corte)
     por = {f["task_id"]: f for f in filas}
     a = por["r1"]
@@ -186,6 +196,9 @@ def test_reportes_diarios_tiempos():
     e = por["r5"]
     assert (e["enviado"], e["cerrado_sin_aprobar"], e["min_revision_aprobacion"], e["min_generacion_envio"]) == (
         True, False, 25.0, 96.0)
+    assert (a["dia_semana"], a["es_fin_de_semana"]) == ("martes", False)
+    assert (por["r5"]["dia_semana"], por["r5"]["es_fin_de_semana"]) == ("domingo", True)
+    assert por["r4"]["es_fin_de_semana"]                                         # feriado
     assert set(a) == set(E.columnas("programa_reportes_diarios"))
 
 

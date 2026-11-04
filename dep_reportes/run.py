@@ -433,7 +433,8 @@ def filas_programa(p: PG.Programa, c: "Corrida", corte: dt.date, tipo_corte: str
         x = reprog.get(e["task_id"])
         e["n_reprogramaciones"] = x["n"] if x else None
         e["fecha_original"] = x["fecha_original"] if x else None
-    rd = RD.filas(p.id, p.nombre, p.cliente, *c.reportes_diarios[p.id], corte, tipo_corte)         if p.id in c.reportes_diarios else []
+    rd = (RD.filas(p.id, p.nombre, p.cliente, *c.reportes_diarios[p.id], corte, tipo_corte, c.modo.cal)
+          if p.id in c.reportes_diarios else [])
 
     def total(pred) -> float:
         return round(sum(h.horas for h in horas if pred(h) and h.fecha <= corte), 2)
