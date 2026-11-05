@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Horas semana DEP</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14213d;--ink2:#4a5568;--mute:#6a7179;--line:#dfe3e8;--teal:#1a7f86;--navy:#14213d;--ok:#1f7a3a;--bajo:#eda100;--sin:#e34948;--blue:#2a78d6;--violet:#6250d6;--neutro:#b8bec7;--gris:#eceff3;--ok-bg:#e3f2e7;--bajo-bg:#fff3d6;--sin-bg:#fde3e3}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#121722;--card:#1b2230;--ink:#eef1f5;--ink2:#c3cad5;--mute:#8f99a8;--line:#2c3545;--teal:#5fc4ca;--navy:#eef1f5;--neutro:#4a5363;--gris:#262d3a;--ok-bg:#1b3a27;--bajo-bg:#4a3a12;--sin-bg:#4a2222}}
+:root[data-theme="dark"]{--bg:#121722;--card:#1b2230;--ink:#eef1f5;--ink2:#c3cad5;--mute:#8f99a8;--line:#2c3545;--teal:#5fc4ca;--navy:#eef1f5;--neutro:#4a5363;--gris:#262d3a;--ok-bg:#1b3a27;--bajo-bg:#4a3a12;--sin-bg:#4a2222}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 "Source Sans 3","Segoe UI",Arial,sans-serif}
+.wrap{max-width:1140px;margin:0 auto;padding:32px 16px 70px}
+header{border-bottom:3px solid var(--teal);padding-bottom:16px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px}
+h1{font-size:28px;margin:0 0 4px;line-height:1.15}
+.sub{color:var(--mute);margin:0}
+h2{font-size:21px;margin:40px 0 8px}
+p{margin:0 0 10px;color:var(--ink2)}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:760px){.kpis{grid-template-columns:1fr}}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;border-top:6px solid var(--c)}
+.kpi .t{font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mute)}
+.kpi .n{font-size:34px;font-weight:700;line-height:1.1;color:var(--c);margin-top:4px}
+.kpi .d{color:var(--ink2);font-size:14px;margin-top:4px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:10px 0}
+.legend{display:flex;flex-wrap:wrap;gap:14px;color:var(--ink2);font-size:13px;margin:8px 0 14px}
+.legend span::before{content:"";display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--c);border:1px solid var(--b,transparent);vertical-align:-1px;margin-right:5px}
+.head3{display:grid;grid-template-columns:170px 1fr 1fr 1fr;gap:12px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mute);padding:0 16px 6px}
+.head3 .cur{color:var(--teal)}
+.person{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:8px;display:grid;grid-template-columns:170px minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}
+.person .name{font-weight:700;font-size:15px}
+.person .nm{font-size:12px;color:var(--mute);margin-top:2px}
+.wk{border-radius:8px;padding:8px 10px;background:var(--gris);min-width:0;overflow:hidden}
+.wk.cur{background:var(--card);border:2px solid var(--teal)}
+.days{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;margin-bottom:6px}
+.days i{display:block;height:18px;border-radius:3px;background:var(--neutro);font-size:10px;color:#fff;text-align:center;line-height:18px;font-weight:600}
+.days i.ok{background:var(--ok)}.days i.bajo{background:var(--bajo)}.days i.sin{background:var(--sin)}.days i.ausente,.days i.feriado{background:var(--card);border:1px solid var(--line);color:var(--mute)}.days i.futuro{background:transparent;border:1px dashed var(--line)}
+.wk .r{font-size:13px;color:var(--ink2)}
+.wk .r b{color:var(--ink)}
+.dbl{margin:4px 0 2px}.dbl .row{display:grid;grid-template-columns:62px 1fr 44px;gap:6px;align-items:center;font-size:11.5px;color:var(--mute);margin-bottom:3px}.dbl .row b{color:var(--ink);text-align:right;font-size:12px}.trk{height:10px;background:var(--gris);border-radius:5px;overflow:hidden;border:1px solid var(--line)}.trk .a{height:100%;background:var(--neutro)}.trk .b{height:100%;background:var(--blue)}
+.bar{height:8px;border-radius:4px;background:var(--neutro);position:relative;margin:4px 0 4px;overflow:hidden}
+.bar div{height:100%;background:var(--blue);border-radius:4px}
+.proy{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.proy span{font-size:11px;background:var(--card);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--ink2)}
+.wk.cur .proy span,.wk.next .proy span{background:var(--gris)}
+.flag{font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;display:inline-block;margin-top:4px}
+.flag.sin{background:var(--sin-bg);color:#a92f2f}.flag.ok{background:var(--ok-bg);color:var(--ok)}.flag.bajo{background:var(--bajo-bg);color:#8a5a00}.flag.gris{background:var(--gris);color:var(--mute)}
+.cols2{display:grid;grid-template-columns:1fr 1.2fr;gap:14px}@media(max-width:900px){.cols2{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border-radius:10px;overflow:hidden}
+th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{background:var(--gris);font-weight:600}
+.small{font-size:12px;color:var(--mute)}
+details.dd{margin-top:6px}details.dd summary{font-size:12px;font-weight:600;color:var(--teal);cursor:pointer}table.dt{margin-top:6px;font-size:11.5px;background:transparent;width:100%;table-layout:fixed}table.dt td{overflow-wrap:anywhere}table.dt th,table.dt td{padding:3px 6px;text-align:left;border-bottom:1px solid var(--line)}table.dt td:nth-child(3),table.dt td:nth-child(4),table.dt th:nth-child(3),table.dt th:nth-child(4){text-align:right}
+.foot{margin-top:40px;color:var(--mute);font-size:12px;border-top:1px solid var(--line);padding-top:10px}
+@media(max-width:900px){.person,.head3{grid-template-columns:1fr}.head3{display:none}}
+
+.pc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0;margin-bottom:12px;overflow:hidden}
+.pc .ph{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line)}
+.pc .ph .name{font-weight:700;font-size:16px}
+.pc .ph .chips{display:flex;gap:6px;flex-wrap:wrap}
+.band{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);align-items:start}
+.band:last-child{border-bottom:none}
+.band .lbl{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mute);padding-top:4px}
+.band .lbl small{display:block;font-weight:400;letter-spacing:0;text-transform:none;font-size:11px;margin-top:2px}
+.tri{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.tri .cell{min-width:0}
+.tri .cap{font-size:11px;color:var(--mute);margin-bottom:4px}
+.tri .cap.cur{color:var(--teal);font-weight:700}
+.hb{display:grid;grid-template-columns:70px 1fr 40px;gap:6px;align-items:center;font-size:11.5px;color:var(--mute);margin-bottom:3px}
+.hb b{color:var(--ink);text-align:right;font-size:12px}
+.band.det{padding:6px 16px 10px}
+.band.det details summary{font-size:12px;font-weight:600;color:var(--teal);cursor:pointer;padding:4px 0}
+@media(max-width:900px){.tri{grid-template-columns:1fr}.band{grid-template-columns:1fr}}
+
+.wh{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:0 16px;background:var(--gris)}
+.wh .tri .cell{padding:6px 10px;font-size:12px;font-weight:700;color:var(--mute);letter-spacing:.3px}
+.wh .tri .cell.cur{color:var(--teal);background:var(--teal-bg)}
+.tri{gap:0}
+.tri .cell{padding:4px 10px;border-left:1px solid var(--line)}
+.tri .cell:first-child{border-left:none}
+.tri .cell.cur{background:var(--teal-bg)}
+.band{gap:12px;padding:0 16px}.band .lbl{padding:10px 0}.tri .cell{padding:10px 10px}.band.det .tri .cell{padding:6px 10px}.band.det{padding:0 16px}
+.band .tri .cell{min-height:100%}
+:root{--teal-bg:#e8f4f5}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--teal-bg:#163a3d}}
+:root[data-theme="dark"]{--teal-bg:#163a3d}
+</style>
+</head>
+<body><div class="wrap">
+<header>
+<div><h1>Horas de la semana · equipo DEP</h1><p class="sub" id="subt"></p></div>
+<div class="small" id="gen"></div>
+</header>
+
+<div class="kpis" id="kpis"></div>
+
+<h2>Por persona</h2>
+<p>Cada tarjeta tiene tres franjas (registro diario, workload, detalle de tareas) y tres columnas separadas por una línea: semana pasada, semana actual y próxima. La columna de la semana actual va sombreada de arriba abajo para compararla de un vistazo con la anterior.</p>
+<div class="legend"><span style="--c:var(--ok)">4 h o más</span><span style="--c:var(--bajo)">Menos de 4 h</span><span style="--c:var(--sin)">Sin registro</span><span style="--c:var(--card);--b:var(--line)">Ausencia o feriado</span><span style="--c:transparent;--b:var(--line)">Días por venir</span><span style="--c:var(--neutro)">Asignado en el workload</span><span style="--c:var(--blue)">Registrado</span></div>
+
+<div id="people"></div>
+
+<h2>¿Se están estimando bien las horas?</h2>
+<p>Dos lecturas. A la izquierda, por persona: cuánto registró la semana pasada frente a lo que tenía asignado (100 % = calza). A la derecha, por tarea: las tareas con vencimiento la semana pasada, con su estimación y las horas registradas en ellas hasta hoy.</p>
+<div class="cols2">
+<div class="card"><h3 style="margin:0 0 8px;font-size:15px">Registrado / asignado · semana pasada</h3><div id="ratio"></div><p class="small" style="margin-top:8px">Verde 80–120 %: la estimación calza. Amarillo: desviación moderada. Rojo: menos de la mitad o más de 1,5 veces; o no había nada asignado.</p></div>
+<div class="card"><h3 style="margin:0 0 8px;font-size:15px">Tareas que vencían la semana pasada</h3><table id="estim"></table><p class="small" id="estim-note" style="margin-top:8px"></p></div>
+</div>
+
+<h2>Por proyecto</h2>
+<p>Horas registradas por proyecto en las dos semanas y personas con asignación la próxima.</p>
+<table id="proy"></table>
+
+<p class="foot" id="foot"></p>
+</div>
+<script>
+const D=__DATA__;
+const DN=['L','M','X','J','V'];
+const MN=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function fmt(s){const d=new Date(s+'T00:00:00');return `${d.getDate()} ${MN[d.getMonth()]}`}
+function rango(w){const d=new Date(w+'T00:00:00');const f=new Date(d.getTime()+4*864e5);return `${d.getDate()}–${f.getDate()} ${MN[f.getMonth()]}`}
+const [W0,W1,W2]=D.W;
+document.getElementById('subt').textContent=`Semana del ${rango(W1)} · corte ${fmt(D.hoy)} · ${D.personas.length} personas${D.jp?` · versión de ${D.jp}`:''}`;
+document.getElementById('gen').textContent=`${D.generado} · registros hasta el ${fmt(D.ultimo_dia)}`;
+
+// KPIs
+let hab=0,sin=0,regPrev=0,asgPrev=0,regCur=0,asgCur=0,asgNext=0,sinPlan=0,curDaysHab=0,curDaysSin=0;
+for(const p of D.personas){const s0=p.semanas[0],s1=p.semanas[1],s2=p.semanas[2];
+ for(const d of s0.dias){if(['ok','bajo','sin'].includes(d.e)){hab++; if(d.e==='sin')sin++}}
+ for(const d of s1.dias){if(['ok','bajo','sin'].includes(d.e)){curDaysHab++; if(d.e==='sin')curDaysSin++}}
+ regPrev+=s0.reg;asgPrev+=s0.asig;regCur+=s1.reg;asgCur+=s1.asig;asgNext+=s2.asig; if(s2.asig===0)sinPlan++;}
+const pct=(a,b)=>b?Math.round(a/b*100):0;
+document.getElementById('kpis').innerHTML=`
+<div class="kpi" style="--c:${pct(sin,hab)>25?'var(--sin)':pct(sin,hab)>10?'var(--bajo)':'var(--ok)'}"><div class="t">Semana pasada · ${rango(W0)}</div><div class="n">${hab-sin} de ${hab} días</div><div class="d">registrados · ${Math.round(regPrev)} h registradas frente a ${Math.round(asgPrev)} h asignadas (${pct(regPrev,asgPrev)} %)</div></div>
+<div class="kpi" style="--c:var(--teal)"><div class="t">Semana actual · ${rango(W1)}</div><div class="n">${curDaysHab-curDaysSin} de ${curDaysHab} días</div><div class="d">registrados hasta hoy · ${Math.round(regCur)} h de ${Math.round(asgCur)} h asignadas</div></div>
+<div class="kpi" style="--c:var(--blue)"><div class="t">Próxima semana · ${rango(W2)}</div><div class="n">${Math.round(asgNext)} h</div><div class="d">asignadas en el workload · ${sinPlan} persona${sinPlan===1?'':'s'} sin ninguna asignación todavía</div></div>`;
+// people
+function wkHtml(s,kind){
+ const days=s.dias.map((d,i)=>`<i class="${d.e}" title="${d.d}: ${d.e==='ausente'?d.t:d.e==='feriado'?'feriado':d.e==='futuro'?'por venir':d.h+' h'}">${d.e==='ok'||d.e==='bajo'?Math.round(d.h):DN[i]}</i>`).join('');
+ const f=s.asig?Math.min(1,s.reg/s.asig):0;
+ let flag='';
+ if(kind==='prev'){const ns=s.dias.filter(d=>d.e==='sin').length;const tarde=s.dias.reduce((a,d)=>a+(d.tarde||0),0);
+   flag=ns===0?`<span class="flag ok">semana completa</span>`:`<span class="flag ${ns>=3?'sin':'bajo'}">${ns} día${ns>1?'s':''} sin registro</span>`;
+   if(tarde>0)flag+=` <span class="flag gris">${Math.round(tarde)} h cargadas tarde</span>`;}
+ if(kind==='cur'){const ns=s.dias.filter(d=>d.e==='sin').length; flag=ns?`<span class="flag bajo">${ns} día${ns>1?'s':''} sin registro aún</span>`:`<span class="flag ok">al día</span>`;}
+ if(kind==='next'){flag=s.asig===0?`<span class="flag sin">sin asignación en el workload</span>`:(s.asig<20?`<span class="flag bajo">carga baja para una semana</span>`:(s.asig>50?`<span class="flag bajo">más de 50 h asignadas</span>`:''));}
+ let proy='';
+ if(kind==='next'){const tp=s.tareas_prog||[];proy=tp.length?`<details class="dd"><summary>Tareas programadas (${tp.length})</summary><table class="dt"><tr><th>Proyecto · cajón</th><th>Tarea</th><th>h</th><th>días</th></tr>${tp.map(x=>`<tr><td>${x.p}<br><span class="small">${x.c}</span></td><td>${x.t}</td><td>${x.h}</td><td class="small">${x.d}</td></tr>`).join('')}</table></details>`:'';}
+ else{proy=s.tareas.length?`<details class="dd"><summary>Tareas con horas (${s.tareas.length})</summary><table class="dt"><tr><th>Proyecto</th><th>Tarea</th><th>h sem.</th><th>est. tarea</th><th>acum.</th></tr>${s.tareas.map(x=>{const pr=x.est?Math.round(x.acum/x.est*100):null;const c=pr===null?'var(--mute)':(pr>120?'var(--sin)':pr>=80?'var(--ok)':'var(--ink2)');return `<tr><td>${x.p}</td><td>${x.t}</td><td>${x.h}</td><td>${x.est?x.est+' h':'<span class="small">sin est.</span>'}</td><td style="color:${c};font-weight:${pr&&pr>120?700:400}">${x.acum} h${pr!==null?' · '+pr+' %':''}</td></tr>`}).join('')}</table></details>`:'';}
+ const mx=Math.max(s.asig,s.reg,44); const ratio=s.asig?Math.round(s.reg/s.asig*100):null;
+ const rcls=ratio===null?'gris':(ratio>=80&&ratio<=120?'ok':(ratio>=50&&ratio<=150?'bajo':'sin'));
+ const delta=ratio===null?'sin horas asignadas':(s.reg-s.asig>=0?'+':'')+(Math.round((s.reg-s.asig)*10)/10)+' h · '+ratio+' % de lo asignado';
+ const barra=kind==='next'?`<div class="dbl"><div class="row"><span>Asignado</span><div class="trk"><div class="a" style="width:${Math.round(s.asig/mx*100)}%"></div></div><b>${s.asig} h</b></div></div>`:
+ `<div class="dbl"><div class="row"><span>Asignado</span><div class="trk"><div class="a" style="width:${Math.round(s.asig/mx*100)}%"></div></div><b>${s.asig} h</b></div><div class="row"><span>Registrado</span><div class="trk"><div class="b" style="width:${Math.round(s.reg/mx*100)}%"></div></div><b>${s.reg} h</b></div><span class="flag ${rcls}">${delta}</span></div>`;
+ return `<div class="wk ${kind}">${kind==='next'?'':`<div class="days">${days}</div>`}${barra}${flag}${proy}</div>`}
+D.personas.sort((a,b)=>b.semanas[0].dias.filter(d=>d.e==='sin').length-a.semanas[0].dias.filter(d=>d.e==='sin').length);
+function daysHtml(s){return `<div class="days">${s.dias.map((d,i)=>`<i class="${d.e}" title="${d.d}: ${d.e==='ausente'?d.t:d.e==='feriado'?'feriado':d.e==='futuro'?'por venir':d.h+' h'}">${d.e==='ok'||d.e==='bajo'?Math.round(d.h):DN[i]}</i>`).join('')}</div>`}
+function ratioInfo(s){const r=s.asig?Math.round(s.reg/s.asig*100):null;const cls=r===null?'gris':(r>=80&&r<=120?'ok':(r>=50&&r<=150?'bajo':'sin'));const txt=r===null?(s.reg?'registró sin asignación':'sin asignación'):(s.reg-s.asig>=0?'+':'')+(Math.round((s.reg-s.asig)*10)/10)+' h · '+r+' %';return {r,cls,txt}}
+function hoursHtml(s,kind,j){const mx=Math.max(s.asig,s.reg,j);const ri=ratioInfo(s);const bajo=20*j/44,alto=50*j/44;
+ return `<div class="hb"><span>Asignado</span><div class="trk"><div class="a" style="width:${Math.round(s.asig/mx*100)}%"></div></div><b>${s.asig}</b></div>`+
+  (kind==='next'?`<span class="flag ${s.asig===0?'sin':(s.asig<bajo||s.asig>alto?'bajo':'ok')}">${s.asig===0?'sin asignación en el workload':(s.asig<bajo?'carga baja para una semana':(s.asig>alto?`más de ${Math.round(alto)} h asignadas`:'carga normal'))}</span>`:
+  `<div class="hb"><span>Registrado</span><div class="trk"><div class="b" style="width:${Math.round(s.reg/mx*100)}%"></div></div><b>${s.reg}</b></div><span class="flag ${ri.cls}">${ri.txt}</span>`)}
+function tasksHtml(s,kind){
+ if(kind==='next'){const tp=s.tareas_prog||[];return tp.length?`<table class="dt"><tr><th>Proyecto · cajón</th><th>Tarea</th><th>h</th><th>días</th></tr>${tp.map(x=>`<tr><td>${x.p}<br><span class="small">${x.c}</span></td><td>${x.t}</td><td>${x.h}</td><td class="small">${x.d}</td></tr>`).join('')}</table>`:'<div class="small">Nada asignado todavía.</div>'}
+ return s.tareas.length?`<table class="dt"><tr><th>Proyecto</th><th>Tarea</th><th>h sem.</th><th>est. tarea</th><th>acum.</th></tr>${s.tareas.map(x=>{const pr=x.est?Math.round(x.acum/x.est*100):null;const c=pr===null?'var(--mute)':(pr>120?'var(--sin)':pr>=80?'var(--ok)':'var(--ink2)');return `<tr><td>${x.p}</td><td>${x.t}</td><td>${x.h}</td><td>${x.est?x.est+' h':'<span class="small">sin est.</span>'}</td><td style="color:${c};font-weight:${pr&&pr>120?700:400}">${x.acum} h${pr!==null?' · '+pr+' %':''}</td></tr>`}).join('')}</table>`:'<div class="small">Sin horas registradas.</div>'}
+const CAP=[`Semana pasada · ${rango(W0)}`,`Semana actual · ${rango(W1)}`,`Próxima semana · ${rango(W2)}`];
+document.getElementById('people').innerHTML=D.personas.map(p=>{const [s0,s1,s2]=p.semanas;
+ const ns0=s0.dias.filter(d=>d.e==='sin').length, ns1=s1.dias.filter(d=>d.e==='sin').length, tarde=s0.dias.reduce((a,d)=>a+(d.tarde||0),0);
+ const chips=[ns0===0?`<span class="flag ok">semana pasada completa</span>`:`<span class="flag ${ns0>=3?'sin':'bajo'}">${ns0} día${ns0>1?'s':''} sin registro la semana pasada</span>`,
+   tarde>0?`<span class="flag gris">${Math.round(tarde)} h cargadas tarde</span>`:'',
+   ns1?`<span class="flag bajo">${ns1} día${ns1>1?'s':''} sin registro esta semana</span>`:(p.jornada!==44&&s1.reg<p.jornada?`<span class="flag gris">${s1.reg} de ${p.jornada} h esta semana</span>`:`<span class="flag ok">al día esta semana</span>`),
+   s2.asig===0?`<span class="flag sin">próxima semana sin asignación</span>`:'',
+   p.jornada!==44?`<span class="flag gris">jornada ${p.jornada} h</span>`:''].join(' ');
+ return `<div class="pc">
+ <div class="ph"><span class="name">${p.nombre}</span><div class="chips">${chips}</div></div>
+ <div class="wh"><div></div><div class="tri"><div class="cell">${CAP[0]}</div><div class="cell cur">${CAP[1]}</div><div class="cell">${CAP[2]}</div></div></div>
+ <div class="band"><div class="lbl">Registro diario<small>horas por día</small></div><div class="tri"><div class="cell">${daysHtml(s0)}</div><div class="cell cur">${daysHtml(s1)}</div><div class="cell"><div class="small" style="padding-top:2px">se completa la próxima semana</div></div></div></div>
+ <div class="band"><div class="lbl">Workload<small>asignado vs registrado</small></div><div class="tri"><div class="cell">${hoursHtml(s0,'prev',p.jornada)}</div><div class="cell cur">${hoursHtml(s1,'cur',p.jornada)}</div><div class="cell">${hoursHtml(s2,'next',p.jornada)}</div></div></div>
+ <div class="band det"><div class="lbl">Detalle<small>tareas</small></div><div class="tri"><div class="cell"><details><summary>Tareas con horas (${s0.tareas.length})</summary>${tasksHtml(s0,'prev')}</details></div><div class="cell cur"><details><summary>Tareas con horas (${s1.tareas.length})</summary>${tasksHtml(s1,'cur')}</details></div><div class="cell"><details><summary>Tareas programadas (${(s2.tareas_prog||[]).length})</summary>${tasksHtml(s2,'next')}</details></div></div></div>
+ </div>`}).join('');
+// estimación
+const rat=D.personas.map(p=>{const s=p.semanas[0];return {n:p.nombre,asig:s.asig,reg:s.reg,r:s.asig?s.reg/s.asig:null}}).filter(x=>x.asig>0||x.reg>0).sort((a,b)=>(b.r??9)-(a.r??9));
+document.getElementById('ratio').innerHTML=rat.map(x=>{const pr=x.r===null?null:Math.round(x.r*100);const w=x.r===null?100:Math.min(100,Math.round(x.r/2*100));const c=pr===null?'var(--sin)':(pr>=80&&pr<=120?'var(--ok)':(pr>=50&&pr<=150?'var(--bajo)':'var(--sin)'));
+ return `<div style="display:grid;grid-template-columns:150px 1fr 120px;gap:8px;align-items:center;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--line)"><span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x.n}</span><div style="position:relative;height:14px;background:var(--gris);border-radius:4px"><div style="position:absolute;left:50%;top:-2px;bottom:-2px;width:2px;background:var(--mute)"></div><div style="width:${w}%;height:100%;background:${c};border-radius:4px"></div></div><span class="small" style="text-align:right">${x.reg} / ${x.asig} h${pr!==null?' · <b>'+pr+' %</b>':' · sin asignación'}</span></div>`}).join('')+`<div class="small" style="margin-top:6px">La marca vertical es 100 %; la barra llega al borde en 200 %.</div>`;
+const E=D.estimacion; const sinReg=E.filter(x=>x.reg===0).length;
+document.getElementById('estim').innerHTML='<tr><th style="text-align:left">Proyecto</th><th style="text-align:left">Tarea</th><th>Estado</th><th>Estimada</th><th>Registrada</th><th>%</th></tr>'+E.map(x=>{const pr=Math.round(x.reg/x.est*100);const c=x.reg===0?'var(--mute)':(pr>120?'var(--sin)':pr>=80?'var(--ok)':'var(--bajo)');return `<tr><td>${x.p}</td><td style="text-align:left">${x.t}</td><td><span class="small">${x.estado}</span></td><td>${x.est} h</td><td>${x.reg} h</td><td style="color:${c};font-weight:700;white-space:nowrap">${x.reg===0?'—':pr+' %'}</td></tr>`}).join('');
+document.getElementById('estim-note').textContent=`${E.length} tareas con estimación vencían esa semana; ${sinReg} no tienen ninguna hora registrada en la tarea misma. Eso no significa que no se trabajaron: las horas suelen quedar en otra tarea (la SS de la propuesta, el padre o una porción distinta). Mientras eso pase, la comparación estimado/real por tarea no es confiable; por eso la regla de registrar en la porción de la semana.`;
+// proyectos
+const rows=Object.entries(D.proyectos).map(([k,v])=>({k,p:(v[W0]||{}).h||0,c:(v[W1]||{}).h||0,np:(v[W0]||{}).n||0,nc:(v[W1]||{}).n||0,nx:(D.asg_next[k]||[]).length})).sort((a,b)=>(b.p+b.c)-(a.p+a.c));
+document.getElementById('proy').innerHTML=`<tr><th>Proyecto</th><th>Semana pasada</th><th>Personas</th><th>Semana actual</th><th>Personas</th><th>Próxima: personas asignadas</th></tr>`+rows.map(r=>`<tr><td>${r.k}</td><td>${r.p} h</td><td>${r.np}</td><td>${r.c} h</td><td>${r.nc}</td><td>${r.nx||'—'}</td></tr>`).join('');
+document.getElementById('foot').textContent=`Fuente: registros de tiempo y tareas asignadas de ClickUp; ausencias de la planilla Vacaciones y Administrativos DEP; feriados de Chile. En jornadas parciales el umbral de 4 h se escala y, una vez registrada la jornada de la semana, los otros días no cuentan como sin registro. "Cargadas tarde" = registradas después del lunes siguiente a la semana trabajada. Asignado = horas estimadas de las tareas con responsable y fechas, prorrateadas por semana. ${D.generado}.`;
+</script>
+</body>
+</html>

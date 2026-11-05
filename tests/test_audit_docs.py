@@ -378,6 +378,8 @@ def test_workflow_cron_y_dispatch_eligen_el_job_correcto():
     assert corre("workflow_dispatch", trabajo="") == {"reporte"}
     assert corre("workflow_dispatch", trabajo=None) == {"reporte"}
     assert corre("workflow_dispatch", trabajo="audit-docs") == {"audit-docs"}
+    assert corre("schedule", "0 10,11 * * 4") == {"informe-horas"}
+    assert corre("workflow_dispatch", trabajo="informe-horas") == {"informe-horas"}
 
 
 def test_diario_pestana_inexistente_o_vacia_no_bloquea(monkeypatch):

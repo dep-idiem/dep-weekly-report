@@ -54,6 +54,7 @@ Proyectos largos que no se miden con curva S, sino por contrato y por línea de 
 | `dep_clickup/` | Cliente de solo lectura de la API de ClickUp (límite de 100 peticiones/min, reintentos ante 429). |
 | `dep_reportes/` | Métricas (`metricas.py`, `proyecto.py`), líneas base (`linea_base.py`), hoja (`almacen.py`, `esquema.py`), proceso (`run.py`) y worker de Actions (`worker.py`). |
 | `config/` | `reportes.json` (retención de preliminares), `controles.json` (umbrales de los controles de cordura), `dias_no_habiles.csv` (días no hábiles propios de IDIEM, además de los feriados de Chile). |
+| `informe_semanal_horas/` | Informe semanal «Horas de la semana · equipo DEP»: HTML general y por JP (ver «Informe semanal de horas»). |
 | `scripts/` | Validación contra el Excel (fase 1), calidad de datos, prueba de Google y restauración de respaldos. |
 | `.github/workflows/reportes.yml` | Workflow de GitHub Actions. |
 | `requirements-worker.txt` | Dependencias del worker con versiones fijas (incluidas `holidays` y `tzdata`). |
@@ -107,6 +108,15 @@ Si alguno falla, no se escribe nada salvo una fila `control_fallido` en `ejecuci
 - cambia el TotalHH de una línea base existente.
 
 Los umbrales están en `config/controles.json`.
+
+## Informe semanal de horas
+
+`python -m informe_semanal_horas` genera en `reportes/horas_semana/` (gitignored) el HTML general, uno por JP y el JSON de la corrida. Solo lee ClickUp y la planilla «Vacaciones y Administrativos DEP». Parámetros en `config/informe_semanal.yaml`; definiciones en `informe_semanal_horas/core.py`.
+
+- **Semanas:** lunes a domingo; pasada, actual y próxima respecto de la fecha de corte. Con la fecha real, el día en curso va como futuro y sus horas no cuentan; con `--hoy` y otra fecha, ese día cuenta como cerrado.
+- **Horas registradas:** todos los time entries del workspace, sin las cargas históricas por API (`cargas_api_fechas`). Las entradas movidas por script también tienen `source = api` y sí cuentan.
+- **Publicar:** `--publicar` sube a `carpeta_drive_id` el general en `General/` y cada versión en una carpeta con el nombre del JP (reemplaza el archivo si ya existe) e imprime los enlaces. Sin esa opción no sube nada. Sin aviso automático: los enlaces quedan en el log del job.
+- **Worker:** job `informe-horas` de `reportes.yml`, jueves 07:00 de Santiago, cron activo. Necesita los secretos `CLICKUP_TOKEN`, `GOOGLE_OAUTH_CLIENT_JSON` y `GOOGLE_REFRESH_TOKEN_DRIVE_RW` (`refresh_token` de `secrets/google_token_drive_rw.json`). Las escrituras en Drive de este job no pasan por la bitácora.
 
 ## Reautenticar Google
 

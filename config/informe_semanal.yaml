@@ -1,0 +1,62 @@
+# Informe semanal «Horas de la semana · equipo DEP» (informe_semanal_horas).
+
+# Personas que ingresaron al workspace de ClickUp hace menos de estas semanas no salen en el informe.
+excluir_nuevos_semanas: 4
+
+# Entran aunque lleven menos de esas semanas (definido por Ale, 05-nov).
+incluir:
+  - Matías Ignacio Cambara Norambuena
+  - Daniela Paz Sanchez Zuñiga
+  - Diego Sebastián Gutiérrez Castillo
+  - Lucas Adonis Nuñez Marquez
+
+# Exclusión por rol (definida por Ale, 05-nov). Nadie sale por dejar de registrar: solo por estar aquí o por ser nuevo.
+excluir:
+  - Alejandra Toro
+  - Nicole Macarena Valdés
+  - Guillermo Augusto Sierra
+  - Luis Alvarez
+  - André Luis Fuenzalida
+  - Anagelin Silva
+  - Camila Andrea Lara Retamal
+
+# Jornada semanal en horas (definida por Ale, 05-nov). Solo las distintas de la estándar. Escala el umbral de
+# «menos de 4 h» y los avisos de carga, y si ya registró su jornada los otros días no salen en rojo.
+jornada_estandar: 44
+jornadas:
+  Diego Ignacio Avendaño: 11
+  Leonardo Cavieres Martínez: 11
+  Felipe Yañez Valdés: 22
+
+# Jornada parcial sin días fijos: los días sin horas de la semana en curso no salen en rojo; se evalúan al cerrarla.
+sin_dias_fijos:
+  - Diego Ignacio Avendaño
+
+# Fechas de registro de cargas históricas por API (source = api): esas entradas no cuentan.
+# Las demás entradas con source = api son horas reales movidas por script entre tareas.
+cargas_api_fechas:
+  - 2026-05-04
+
+# true: la tabla «Tareas que vencían la semana pasada» sin las listas ADM (la maqueta no las traía).
+estimacion_sin_adm: true
+
+# Planilla «Vacaciones y Administrativos DEP» (hoja de Google).
+planilla_ausencias_id: 1QayGx0tG4X7A43s1qO8Lb9MIUvWElpHyUv6mzFaaO_A
+
+# Los únicos JP con versión propia (definido por Ale, 05-nov). Las listas de otro responsable no salen en ninguna
+# versión, salvo que esté en jp_a_cargo: entonces pasan a la versión de su JP.
+jefes_proyecto:
+  - Fernando Muñoz Benavides
+  - Genesis Díaz S.
+  - Pablo Herrera
+  - Pilar Castellón
+  - Sebastián Contreras
+  - Tomas Navarrete Arenas
+jp_a_cargo:
+  Felipe Yañez Valdés: Fernando Muñoz Benavides
+  Luciano Gálvez A.: Fernando Muñoz Benavides
+
+# Carpeta «Reportes semanales» en Drive. Dentro: el informe general en carpeta_general y una carpeta con el nombre
+# de cada JP para su versión.
+carpeta_drive_id: 1fyD2LBD4m_NTnsBlRgFM9CWxy8Xj0IbJ
+carpeta_general: General
