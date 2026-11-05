@@ -3,7 +3,7 @@
     python -m informe_semanal_horas                         # hoy; genera en local, sin publicar ni avisar
     python -m informe_semanal_horas --hoy 2026-10-23        # otra fecha de corte
     python -m informe_semanal_horas --solo-general          # sin las versiones por JP
-    python -m informe_semanal_horas --publicar              # además sube los HTML y PDF a Drive
+    python -m informe_semanal_horas --publicar              # además sube los PDF a Drive
     python -m informe_semanal_horas --evento schedule       # job del worker: solo los jueves de 07:00 a 08:59 de Santiago
 
 Cuando la fecha de corte es la fecha real, el día en curso va como futuro (el job corre a las 7:00) y sus horas
@@ -11,7 +11,8 @@ no cuentan. Con otra fecha, ese día ya cuenta como cerrado.
 
 Salidas (en .gitignore): reportes/horas_semana/AAAA-MM-DD.json y los HTML horas_semana_DEP_AAAA-MM-DD.html y
 horas_semana_<iniciales JP>_AAAA-MM-DD.html, cada uno con su PDF (sin el desglose de horas por tarea; ver pdf.py).
-Si Chrome no está o falla, se avisa y siguen los HTML.
+A Drive van solo los PDF (pedido de Ale, 05-nov); el HTML queda en local y solo se sube si su PDF falló
+(Chrome ausente o con error: se avisa).
 
 Pruebas con datos guardados: --entradas-crudo, --tareas-crudo y --planilla (xlsx local).
 """
@@ -61,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--hoy", type=dt.date.fromisoformat, help="fecha de corte AAAA-MM-DD (por defecto, hoy)")
     ap.add_argument("--evento", default="manual", help="schedule: solo corre jueves de 07:00 a 08:59 de Santiago")
-    ap.add_argument("--publicar", action="store_true", help="sube los HTML y PDF a Drive (por defecto no)")
+    ap.add_argument("--publicar", action="store_true", help="sube los PDF a Drive (por defecto no)")
     ap.add_argument("--sin-aviso", action="store_true", default=True,
                     help="por defecto y por ahora la única opción: no se avisa a nadie")
     ap.add_argument("--sin-pdf", action="store_true", help="no genera los PDF")
@@ -137,7 +138,8 @@ def main(argv: list[str] | None = None) -> int:
         print("  sin fila en la planilla de ausencias: " + ", ".join(sin_cruce))
     if a.publicar:
         from .drive import publicar
-        carpetas, enlaces = publicar(binarios, destino, cfg["carpeta_drive_id"])
+        subir = {k: v for k, v in binarios.items() if k.endswith(".pdf") or k[:-5] + ".pdf" not in binarios}
+        carpetas, enlaces = publicar(subir, destino, cfg["carpeta_drive_id"])
         for nombre, url in enlaces.items():
             print(f"  {destino[nombre]}/{nombre}: {url}")
         print("Carpetas:")
