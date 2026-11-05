@@ -228,8 +228,9 @@ class Asignado:
 
 
 def calcular_asignado(tareas: Tareas, cal: Calendario, semanas_: list[dt.date]) -> dict[tuple[int, dt.date], Asignado]:
-    """Por (persona, semana): tareas con responsable, fechas y estimación, prorrateadas por días hábiles y en
-    partes iguales entre responsables. Una tarea con alguna descendiente estimada no cuenta."""
+    """Por (persona, semana): tareas con responsable, fechas y estimación, prorrateadas por días hábiles. El
+    time_estimate es por persona (convención de los JP, 05-nov): con varios responsables cuenta completo para cada uno,
+    como en Carga de trabajo de ClickUp. Una tarea con alguna descendiente estimada no cuenta."""
     out: dict[tuple[int, dt.date], Asignado] = defaultdict(Asignado)
     objetivo = set(semanas_)
     for t in tareas.por_id.values():
@@ -239,7 +240,6 @@ def calcular_asignado(tareas: Tareas, cal: Calendario, semanas_: list[dt.date]) 
         v = ventana(t)
         if v is None:
             continue
-        parte = h / len(t["assignees"])
         for w, frac in repartir(v[0], v[1], cal).items():
             if w not in objetivo:
                 continue
@@ -249,10 +249,10 @@ def calcular_asignado(tareas: Tareas, cal: Calendario, semanas_: list[dt.date]) 
             proyecto = etiqueta(t["list"]["name"], t["list"]["id"])
             for a in t["assignees"]:
                 k = out[(int(a["id"]), w)]
-                k.horas += parte * frac
+                k.horas += h * frac
                 k.listas.add(proyecto)
                 k.lista_ids.add(t["list"]["id"])
-                k.tareas.append({"p": proyecto, "c": tareas.cajon(t), "t": t["name"], "h": round(parte * frac, 1),
+                k.tareas.append({"p": proyecto, "c": tareas.cajon(t), "t": t["name"], "h": round(h * frac, 1),
                                  "d": rango_dias(ini, fin)})
     return out
 

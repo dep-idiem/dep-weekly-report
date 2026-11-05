@@ -45,6 +45,10 @@ def cliente(escritura: bool = False) -> DriveClient:
     return DriveClient(AuthorizedSession(_credenciales(escritura)))
 
 
+def tipo(nombre: str) -> str:
+    return "application/pdf" if nombre.lower().endswith(".pdf") else "text/html"
+
+
 def _comprobar(r, que: str) -> dict:
     if r.status_code != 200:
         raise RuntimeError(f"Drive {r.status_code} al {que}: {r.text[:300]}")
@@ -73,13 +77,13 @@ def publicar(archivos: dict[str, bytes], destino: dict[str, str], carpeta_id: st
         if nombre in existentes:
             fid = existentes[nombre]
             _comprobar(dr.s.patch(f"{UPLOAD}/{fid}", params={"uploadType": "media", "supportsAllDrives": "true"},
-                                  data=contenido, headers={"Content-Type": "text/html"}, timeout=300),
+                                  data=contenido, headers={"Content-Type": tipo(nombre)}, timeout=300),
                        f"reemplazar «{nombre}»")
         else:
             meta = {"name": nombre, "parents": [padre]}
             fid = _comprobar(dr.s.post(UPLOAD, params={"uploadType": "multipart", "supportsAllDrives": "true", "fields": "id"},
                                        files={"metadata": ("metadata", json.dumps(meta), "application/json; charset=UTF-8"),
-                                              "file": (nombre, contenido, "text/html")}, timeout=300),
+                                              "file": (nombre, contenido, tipo(nombre))}, timeout=300),
                              f"subir «{nombre}»")["id"]
         enlaces_archivos[nombre] = ENLACE_ARCHIVO.format(fid)
     return usadas, enlaces_archivos

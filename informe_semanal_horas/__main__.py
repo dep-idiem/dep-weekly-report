@@ -3,14 +3,15 @@
     python -m informe_semanal_horas                         # hoy; genera en local, sin publicar ni avisar
     python -m informe_semanal_horas --hoy 2026-10-23        # otra fecha de corte
     python -m informe_semanal_horas --solo-general          # sin las versiones por JP
-    python -m informe_semanal_horas --publicar              # además sube los HTML a Drive
+    python -m informe_semanal_horas --publicar              # además sube los HTML y PDF a Drive
     python -m informe_semanal_horas --evento schedule       # job del worker: solo los jueves de 07:00 a 08:59 de Santiago
 
 Cuando la fecha de corte es la fecha real, el día en curso va como futuro (el job corre a las 7:00) y sus horas
 no cuentan. Con otra fecha, ese día ya cuenta como cerrado.
 
 Salidas (en .gitignore): reportes/horas_semana/AAAA-MM-DD.json y los HTML horas_semana_DEP_AAAA-MM-DD.html y
-horas_semana_<iniciales JP>_AAAA-MM-DD.html.
+horas_semana_<iniciales JP>_AAAA-MM-DD.html, cada uno con su PDF (sin el desglose de horas por tarea; ver pdf.py).
+Si Chrome no está o falla, se avisa y siguen los HTML.
 
 Pruebas con datos guardados: --entradas-crudo, --tareas-crudo y --planilla (xlsx local).
 """
@@ -28,7 +29,7 @@ from dep_clickup import ClickUpClient
 from dep_clickup.config import ROOT, TZ
 from dep_reportes.calendario import calendario_chile
 
-from . import core, fuentes
+from . import core, fuentes, pdf
 
 CONFIG = ROOT / "config" / "informe_semanal.yaml"
 SALIDA = ROOT / "reportes" / "horas_semana"
@@ -60,9 +61,10 @@ def main(argv: list[str] | None = None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--hoy", type=dt.date.fromisoformat, help="fecha de corte AAAA-MM-DD (por defecto, hoy)")
     ap.add_argument("--evento", default="manual", help="schedule: solo corre jueves de 07:00 a 08:59 de Santiago")
-    ap.add_argument("--publicar", action="store_true", help="sube los HTML a Drive (por defecto no)")
+    ap.add_argument("--publicar", action="store_true", help="sube los HTML y PDF a Drive (por defecto no)")
     ap.add_argument("--sin-aviso", action="store_true", default=True,
                     help="por defecto y por ahora la única opción: no se avisa a nadie")
+    ap.add_argument("--sin-pdf", action="store_true", help="no genera los PDF")
     ap.add_argument("--solo-general", action="store_true", help="no genera las versiones por JP")
     ap.add_argument("--salida", type=Path, default=SALIDA)
     ap.add_argument("--entradas-crudo", type=Path)
@@ -113,13 +115,21 @@ def main(argv: list[str] | None = None) -> int:
             archivos[f"horas_semana_{sigla}_{fecha}.html"] = core.render(v, generado)
             destino[f"horas_semana_{sigla}_{fecha}.html"] = jp["nombre"].strip()
             versiones[sigla] = {"jp": jp["nombre"], "personas": [x["nombre"] for x in v["personas"]]}
-    for nombre, contenido in archivos.items():
-        (a.salida / nombre).write_text(contenido, encoding="utf-8", newline="\n")
+    binarios = {k: v.encode("utf-8") for k, v in archivos.items()}
+    if not a.sin_pdf:
+        for nombre, contenido in archivos.items():
+            try:
+                binarios[nombre[:-5] + ".pdf"] = pdf.html_a_pdf(contenido)
+                destino[nombre[:-5] + ".pdf"] = destino[nombre]
+            except Exception as e:      # el PDF es una copia: sin él siguen los HTML
+                print(f"  AVISO: sin PDF de {nombre}: {e}")
+    for nombre, contenido in binarios.items():
+        (a.salida / nombre).write_bytes(contenido)
     (a.salida / f"{fecha}.json").write_text(json.dumps({**core._publico(general), "versiones": versiones},
                                                        ensure_ascii=False, indent=1), encoding="utf-8", newline="\n")
 
     _, fuera = core.personas_incluidas(miembros, p)
-    print(f"Corte {fecha} · registros hasta {p.ultimo_dia} · {len(general['personas'])} personas · {len(archivos)} HTML en {a.salida}")
+    print(f"Corte {fecha} · registros hasta {p.ultimo_dia} · {len(general['personas'])} personas · {len(archivos)} HTML y {len(binarios) - len(archivos)} PDF en {a.salida}")
     for m in fuera:
         print(f"  fuera: {m['nombre']} ({m['motivo']})")
     sin_cruce = [x["nombre"] for x in general["personas"] if core.cruzar_nombre(x["nombre"], ausencias.dias) is None]
@@ -127,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         print("  sin fila en la planilla de ausencias: " + ", ".join(sin_cruce))
     if a.publicar:
         from .drive import publicar
-        carpetas, enlaces = publicar({k: v.encode("utf-8") for k, v in archivos.items()}, destino, cfg["carpeta_drive_id"])
+        carpetas, enlaces = publicar(binarios, destino, cfg["carpeta_drive_id"])
         for nombre, url in enlaces.items():
             print(f"  {destino[nombre]}/{nombre}: {url}")
         print("Carpetas:")

@@ -182,12 +182,14 @@ def test_etiquetas():
     assert core.etiqueta("Time Tracking") == "Time Tracking"
 
 
-def test_asignado_prorratea_por_habiles_y_reparte_entre_responsables():
-    # 20 h de jueves a miércoles siguiente = 5 hábiles (2 en una semana, 3 en la otra), entre 2 personas
-    t = tarea("A", 20, D(2026, 10, 29), D(2026, 11, 4), resp=(1, 2))
+def test_asignado_prorratea_por_habiles_y_no_divide_entre_responsables():
+    # 10 h de jueves a miércoles siguiente = 5 hábiles (2 en una semana, 3 en la otra); el estimate es por persona
+    t = tarea("A", 10, D(2026, 10, 29), D(2026, 11, 4), resp=(1, 2))
     a = core.calcular_asignado(core.Tareas.desde([t]), CAL, core.semanas(HOY))
     assert a[(1, D(2026, 10, 26))].horas == pytest.approx(4)
+    assert a[(2, D(2026, 10, 26))].horas == pytest.approx(4)
     assert a[(2, D(2026, 11, 2))].horas == pytest.approx(6)
+    assert a[(1, D(2026, 11, 2))].tareas[0]["h"] == 6.0
     assert a[(1, D(2026, 11, 2))].tareas[0]["d"] == "2–4 nov"
 
 
@@ -307,3 +309,11 @@ def test_render_escapa_y_no_deja_marcador(tmp_path):
     bloque = salida.split("const D=", 1)[1].split(";\nconst DN", 1)[0]
     d = json.loads(bloque)
     assert d["generado"] == "Generado hoy" and "id" not in d["personas"][0]
+
+
+def test_pdf_va_con_su_tipo_y_sin_desglose():
+    from informe_semanal_horas import drive, pdf
+    assert drive.tipo("horas_semana_DEP_2026-11-05.pdf") == "application/pdf"
+    assert drive.tipo("horas_semana_DEP_2026-11-05.html") == "text/html"
+    html = pdf.para_imprimir("<html><head><title>x</title></head><body></body></html>")
+    assert ".band.det{display:none}" in html and html.index("@page") < html.index("</head>")
