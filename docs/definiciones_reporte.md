@@ -208,7 +208,8 @@ tienen `time_estimate` y las tareas en No Aplica. Cada tarea aporta:
 - Días hábiles: lunes a viernes, sin feriados de Chile ni los días de `config/dias_no_habiles.csv`.
 - Sin `start_date`, sin días hábiles en el rango o con vencimiento anterior al inicio: la tarea cuenta entera en la
   semana del vencimiento (o del inicio, si no tiene vencimiento).
-- Con varios responsables, el `time_estimate` se reparte en partes iguales.
+- El `time_estimate` es por persona (convención de los JP, 05-11-2026): con varios responsables cuenta completo para
+  cada uno, como en Carga de trabajo de ClickUp, y el plan del proyecto suma el de cada responsable.
 - Las tareas sin responsable no suman al plan del proyecto; en `plan_vs_real` aparecen como «(sin responsable)».
 
 **Registrado (semana).** Entradas de tiempo de la lista PJ por **fecha trabajada** (el inicio de la entrada), no por

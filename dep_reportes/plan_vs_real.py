@@ -5,8 +5,9 @@ Definiciones (docs/definiciones_reporte.md):
 - Planificado (semana): sobre las tareas con responsable, alguna fecha y time estimate, que no tengan descendientes con
   time estimate (sin restringir a «porción»; No Aplica fuera): time_estimate × días hábiles de la tarea dentro de la
   semana / días hábiles totales de la tarea (calendario del modo: feriados de Chile y días no hábiles de IDIEM). Sin
-  start (o sin días hábiles, o due < start): entera en la semana del due (o del start si no hay due). Con varios
-  responsables, el time estimate se reparte en partes iguales.
+  start (o sin días hábiles, o due < start): entera en la semana del due (o del start si no hay due). El time
+  estimate es por persona (convención de los JP, 2026-11-05): con varios responsables cuenta completo para cada uno,
+  como en Carga de trabajo de ClickUp, y el plan del proyecto suma el de cada responsable.
 - Registrado (semana): entradas de tiempo por fecha trabajada (start de la entrada). Las de la lista PJ y, aparte, las
   de la tarea de la SS del proyecto en SS_REGISTRO (origen "SS"; fuera de la curva S).
 
@@ -93,14 +94,14 @@ def reparto_semanal(t: Task, cal: Calendario) -> dict[dt.date, float]:
 
 
 def plan_por_persona(tareas: Sequence[Task], cal: Calendario) -> dict[tuple[str, dt.date], float]:
-    """(persona, lunes) -> horas planificadas. Persona = responsable (time estimate repartido en partes iguales) o
-    SIN_RESPONSABLE."""
+    """(persona, lunes) -> horas planificadas. Persona = cada responsable (el time estimate es por persona: completo
+    para cada uno) o SIN_RESPONSABLE."""
     out: dict[tuple[str, dt.date], float] = defaultdict(float)
     for t in tareas_plan(tareas, con_responsable=False):
         personas = list(t.assignees) or [SIN_RESPONSABLE]
         for sem, h in reparto_semanal(t, cal).items():
             for p in personas:
-                out[(p, sem)] += h / len(personas)
+                out[(p, sem)] += h
     return dict(out)
 
 

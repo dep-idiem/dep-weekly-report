@@ -50,7 +50,7 @@ def test_plan_regla_c_prorrateo_feriados_y_exclusiones():
     ts = [_t("f", "05 Ingeniería"),
           # 4 hábiles: jue 8, vie 9, (lun 12 feriado), mar 13, mié 14 -> 2 en la semana del 05-oct, 2 en la del 12-oct
           _t("a", "Modelo", "f", s=D(2026, 10, 8), d=D(2026, 10, 14), te_h=40, asignados=("Ana",)),
-          # sin start: entera en la semana del due
+          # sin start: entera en la semana del due; el estimate es por persona (6 h a cada uno)
           _t("b", "Revisión", "f", d=D(2026, 10, 21), te_h=6, asignados=("Ana", "Luis")),
           # padre con hija estimada: no cuenta; la hija sí
           _t("c", "Paquete", "f", s=D(2026, 10, 19), d=D(2026, 10, 30), te_h=99, asignados=("Luis",)),
@@ -62,11 +62,11 @@ def test_plan_regla_c_prorrateo_feriados_y_exclusiones():
           _t("g", "Sin fechas", "f", te_h=7, asignados=("Ana",))]
     plan = PVR.plan_por_persona(ts, CAL)
     assert plan[("Ana", D(2026, 10, 5))] == 20 and plan[("Ana", D(2026, 10, 12))] == 20
-    assert plan[("Ana", D(2026, 10, 19))] == 3 and plan[("Luis", D(2026, 10, 19))] == 3 + 8
+    assert plan[("Ana", D(2026, 10, 19))] == 6 and plan[("Luis", D(2026, 10, 19))] == 6 + 8
     assert plan[(PVR.SIN_RESPONSABLE, D(2026, 10, 26))] == 5
     assert ("Ana", D(2026, 10, 26)) not in plan
     tot = PVR.plan_semanal_total(plan)
-    assert tot == {D(2026, 10, 5): 20, D(2026, 10, 12): 20, D(2026, 10, 19): 14}
+    assert tot == {D(2026, 10, 5): 20, D(2026, 10, 12): 20, D(2026, 10, 19): 20}
 
 
 def test_plan_semanal_usa_regla_c_y_columna_ss():
