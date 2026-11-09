@@ -1,5 +1,5 @@
 # Lista «ADM-07 | Ausencias» (TAREA_pj_asignar_v2 B). Mientras lista_id esté vacío se sigue leyendo la planilla
 # «Vacaciones y Administrativos DEP» (planilla_ausencias_id en config/informe_semanal.yaml).
-lista_id: ""
+lista_id: "1400570000003892"   # creada el 2026-11-09; formulario «Solicitar ausencia» 2ky568zh-28353
 campo_tipo: Tipo de ausencia
 carpeta_administracion: "901318508657"
