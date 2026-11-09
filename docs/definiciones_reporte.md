@@ -255,3 +255,35 @@ corte, y 6 hacia adelante), más una fila «(proyecto)» por semana con `horas_n
 | es_ultimo_corte | filas del corte más reciente |
 
 Se guarda cada corte oficial (no se sobrescribe el historial); un preliminar reemplaza los preliminares anteriores.
+
+## 5. Asignación, ausencias y carga base
+
+Decisiones de Ale del 2026-11-06 (TAREA_pj_asignar_v2). Código en `pj_asignar/`, `carga_base/`, `ausencias/`, `orden_adm/` y
+`dep_reportes/ausencias.py`. Todo escribe en dos pasos: dry-run y, con aprobación, la escritura.
+
+**Disponibilidad** por persona y semana = tope total (la jornada) − carga base − planificado − ausencias − lo asignado en la
+misma corrida. Nunca negativa. El planificado usa la regla C de la sección 3, estimate por responsable, en las listas PJ-
+activas (sin Proyectos Finalizados ni listas de prueba) y las ADM. Quedan fuera, para no contar dos veces: ADM-01 y las tareas
+con tag `carga-base` (su carga ya es la carga base), ADM-07, las tareas cerradas y el árbol de los cajones que se están
+asignando.
+
+**Elección.** Personas necesarias por cajón `n = ceil(h/semana ÷ tope_proyecto)`, máximo 3. Candidatos con perfil
+(`config/perfiles.yaml`), ordenados por mayor disponibilidad mínima en las semanas del cajón, continuidad y menor carga. Cuenta
+como disponible quien tiene libre al menos `porcion_minima` (8 h) o su parte del cajón, si es menor. Lo que falta se propone
+fuera de perfil, con aviso. Los ingresos de oct-2026 compiten en todo salvo planos, con tope de 20 h/semana hasta el 2027-01-01
+y siempre junto a alguien con historial. Con `--fuente-hh estimate`, un cajón con HH y sin estimate usa las HH y avisa
+(`cajon_sin_estimate_usa_hh`). Lo que no cabe queda en `hh_sin_asignar`: no se fuerza.
+
+**Ausencias.** Lista «ADM-07 | Ausencias»: una tarea por persona y tramo; cuenta solo en estado `aprobada`. Horas = 8,8 × días
+hábiles (4,4 para medio día), calculadas desde las fechas. Sin `lista_id` en `config/ausencias.yaml` se sigue leyendo la planilla.
+ADM-07 no cuenta como horas asignadas ni registradas. En `plan_vs_real` van como filas con proyecto y estado «(ausencia)» y las
+horas en `horas_planificadas`: filtrarlas para no sumarlas al plan.
+
+**Carga base.** `config/carga_base.yaml`; `python -m carga_base` crea por persona y semana, 6 semanas hacia adelante, «Administración
+· DD-mmm» en ADM-01, las tareas fijas en su lista y las puntuales de una sola semana («Propuestas · DD-mmm», el estimate futuro
+que tenía ADM-006, decisión del 2026-11-09), con tag `carga-base`. `--recalibrar` compara con las 8 semanas anteriores y
+propone ajustes sin cambiar la config.
+
+**Listas ADM.** `list_code` y `dep_sync` reconocen ADM con dos o tres dígitos (ADM-01, ADM-006).
+ADM-01 queda con cuatro tareas: Coordinación y correos, Reuniones internas, Otros administrativos y Elaboración de propuestas
+(todo lo de ADM-006). Una entrada movida por copia lleva «movida desde <tarea> el <fecha>» y no cuenta como cargada tarde.

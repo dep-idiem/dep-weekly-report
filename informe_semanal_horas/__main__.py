@@ -28,6 +28,7 @@ import yaml
 
 from dep_clickup import ClickUpClient
 from dep_clickup.config import ROOT, TZ
+from dep_reportes import ausencias as AUS
 from dep_reportes.calendario import calendario_chile
 
 from . import core, fuentes, pdf
@@ -89,12 +90,16 @@ def main(argv: list[str] | None = None) -> int:
     crudo_ent = leer_json(a.entradas_crudo) if a.entradas_crudo else fuentes.bajar_entradas(cu, hoy)
     crudo_tar = leer_json(a.tareas_crudo) if a.tareas_crudo else fuentes.bajar_tareas(cu)
     miembros = leer_json(a.miembros_crudo) if a.miembros_crudo else fuentes.miembros(cu)
-    ws = fuentes.planilla_local(a.planilla) if a.planilla else fuentes.planilla_ausencias(cfg["planilla_ausencias_id"])
-    ausencias = core.leer_ausencias(ws)
+    cal = calendario_chile(extra_csv=ROOT / "config" / "dias_no_habiles.csv")
+    if AUS.lista_id() and not a.planilla:       # ADM-07; mientras no exista, la planilla
+        tramos = AUS.tramos_de_tareas(cu.list_tasks(AUS.lista_id()), AUS.config().get("campo_tipo", "Tipo de ausencia"))
+        ausencias = core.Ausencias(AUS.dias_por_persona(tramos, cal), cfg.get("siglas") or {})
+    else:
+        ws = fuentes.planilla_local(a.planilla) if a.planilla else fuentes.planilla_ausencias(cfg["planilla_ausencias_id"])
+        ausencias = core.leer_ausencias(ws)
 
     entradas = core.normalizar_entradas(crudo_ent, cfg.get("cargas_api_fechas") or ())
     tareas = core.Tareas.desde(crudo_tar["tareas"])
-    cal = calendario_chile(extra_csv=ROOT / "config" / "dias_no_habiles.csv")
     general = core.construir(entradas, tareas, miembros, ausencias, cal, p)
     generado = f"Generado el {DIAS[ahora.weekday()]} {ahora:%d-%m-%Y %H:%M}"
 
@@ -134,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     for m in fuera:
         print(f"  fuera: {m['nombre']} ({m['motivo']})")
     sin_cruce = [x["nombre"] for x in general["personas"] if core.cruzar_nombre(x["nombre"], ausencias.dias) is None]
-    if sin_cruce:
+    if sin_cruce and not (AUS.lista_id() and not a.planilla):
         print("  sin fila en la planilla de ausencias: " + ", ".join(sin_cruce))
     if a.publicar:
         from .drive import publicar

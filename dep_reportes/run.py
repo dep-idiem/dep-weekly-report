@@ -31,7 +31,7 @@ from dep_clickup.naming import list_code
 from . import calidad, codigos as COD, controles as CTL, esquema as E, linea_base as LB, presentacion as PR, proyecto as P
 from . import horas as H, personas as PERS, reproceso as REP, resolucion as RES
 from . import estructura as EST, finalizados as FIN, metricas as MT, plan_semanal as PS, presupuesto as PRES
-from . import plan_vs_real as PVR, programada as PROG, programas as PG, reportes_diarios as RD, v2 as V2
+from . import ausencias as AUS, plan_vs_real as PVR, programada as PROG, programas as PG, reportes_diarios as RD, v2 as V2
 from . import avance as AV
 from .adaptador_clickup import a_horas, a_tareas_metrica, horas_por_tarea
 from .almacen import AlmacenCsv, AlmacenSheets, celda_csv, completar, duplicados, filas_lb_desde_tabla, fusionar
@@ -736,6 +736,10 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
         for f in r.plan_vs_real:
             f["tipo_corte"] = tipo_corte
     corrida.plan_vs_real = [f for r in corrida.listas if r.situacion.emite_semanales for f in r.plan_vs_real]
+    if AUS.lista_id() and not solo:      # con --solo no se tocan: fusionar solo reemplaza las filas de esa lista
+        cfg_aus = AUS.config()
+        tramos = AUS.tramos_de_tareas(cu.list_tasks(AUS.lista_id()), cfg_aus.get("campo_tipo", "Tipo de ausencia"))
+        corrida.plan_vs_real += PVR.filas_ausencia(corte, tipo_corte, AUS.horas_por_semana(AUS.dias_por_persona(tramos, modo.cal)))
     corrida.peticiones_clickup = dict(cu.request_log)
 
     nuevas: dict[str, list[dict]] = {t: [] for t in E.TABLAS}

@@ -166,6 +166,13 @@ def test_cargado_tarde_es_despues_del_lunes_siguiente():
     assert (dias[0]["tarde"], dias[1]["tarde"]) == (0.0, 5.0)
 
 
+def test_entrada_movida_por_orden_adm_no_es_tarde():
+    e = entrada(1, D(2026, 10, 26), 3, registro=D(2026, 11, 9), source="api", task="A")
+    e["description"] = "movida desde 02 Gestión administrativa y correos el 2026-11-09"
+    dias = construir([e, entrada(1, D(2026, 10, 27), 5, registro=D(2026, 11, 9), task="B")])["personas"][0]["semanas"][0]["dias"]
+    assert (dias[0]["tarde"], dias[1]["tarde"]) == (0.0, 5.0)
+
+
 def test_solo_excluye_la_carga_historica_por_api():
     es = [entrada(1, D(2026, 3, 2), 8, registro=D(2026, 5, 4), source="api", task="A"),
           entrada(1, D(2026, 9, 2), 2, registro=D(2026, 10, 27), source="api", task="B")]

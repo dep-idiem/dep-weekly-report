@@ -43,6 +43,16 @@ estimacion_sin_adm: true
 # Planilla «Vacaciones y Administrativos DEP» (hoja de Google).
 planilla_ausencias_id: 1QayGx0tG4X7A43s1qO8Lb9MIUvWElpHyUv6mzFaaO_A
 
+# Sigla de cada JP en los nombres de archivo cuando las ausencias se leen de ADM-07 (salían de la planilla).
+siglas:
+  Fernando Muñoz Benavides: FMB
+  Genesis Díaz S.: GDS
+  Pablo Herrera: PHT
+  Pilar Castellón: PCF
+  Sebastián Contreras: SCC
+  Tomas Navarrete Arenas: TNA
+  Sergio Tapia Pérez: STP
+
 # Los únicos JP con versión propia (definido por Ale, 05-nov). Las listas de otro responsable no salen en ninguna
 # versión, salvo que esté en jp_a_cargo: entonces pasan a la versión de su JP.
 jefes_proyecto:

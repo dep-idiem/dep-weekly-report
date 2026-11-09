@@ -21,11 +21,14 @@ UNA_SEMANA = dt.timedelta(days=7)
 SS_REGISTRO = "901324495476"
 PROPUESTAS = "Propuestas (SS)"
 LISTAS_PRUEBA = ("PJ-TEST", "PJ-EJEMPLO")
+LISTA_AUSENCIAS = "ADM-07"
 UMBRAL_H = 4.0
 JORNADA_ESTANDAR = 44.0
 TIPOS_AUSENCIA = {0: "compensatorio", 1: "administrativo", 2: "vacaciones", 3: "licencia"}
 MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 PLANTILLA = Path(__file__).with_name("plantilla_semanal.html")
+# Copia de una entrada movida entre tareas por orden_adm: su `at` es el día del movimiento, no el del registro.
+MOVIDA = re.compile(r"movida desde .+ el \d{4}-\d{2}-\d{2}")
 _CODIGO = re.compile(r"^\s*(?:PJ|PR)-(\d{4}\.[0-9A-Za-z]+(?:-\d+)?)")
 _ADM = re.compile(r"^\s*(ADM-\d+)")
 
@@ -135,7 +138,8 @@ def normalizar_entradas(crudas: Iterable[dict], fechas_carga_api: Iterable[dt.da
     """Sin cronómetros corriendo ni cargas históricas por API.
 
     Carga por API = source «api» registrada en una de `fechas_carga_api`. Las demás entradas con source «api»
-    son horas reales movidas por script entre tareas (scripts/mover_entradas_pr.py) y sí cuentan."""
+    son horas reales movidas por script entre tareas (scripts/mover_entradas_pr.py) y sí cuentan. Las copias de
+    orden_adm («movida desde <tarea> el <fecha>» en la descripción) no cuentan como cargadas tarde."""
     cargas = set(fechas_carga_api)
     out = []
     for e in crudas:
@@ -145,7 +149,11 @@ def normalizar_entradas(crudas: Iterable[dict], fechas_carga_api: Iterable[dt.da
         registro = dia_local(e["at"])
         if e.get("source") == "api" and registro in cargas:
             continue
+        if MOVIDA.search(e.get("description") or ""):
+            registro = dia_local(e["start"])
         loc, task, u = e.get("task_location") or {}, e.get("task") or {}, e.get("user") or {}
+        if (loc.get("list_name") or "").startswith(LISTA_AUSENCIAS):
+            continue
         out.append(Entrada(int(u.get("id") or 0), u.get("username") or "", task.get("id") or "", task.get("name") or "",
                            loc.get("list_id") or "", etiqueta(loc.get("list_name"), loc.get("list_id")),
                            dia_local(e["start"]), registro, dur / 3_600_000))
@@ -157,7 +165,8 @@ def _horas_estimadas(t: dict) -> float:
 
 
 def _de_prueba(t: dict) -> bool:
-    return ((t.get("list") or {}).get("name") or "").startswith(LISTAS_PRUEBA)
+    """Listas de prueba y ADM-07: las ausencias no son horas asignadas (salen en días, desde la lista)."""
+    return ((t.get("list") or {}).get("name") or "").startswith(LISTAS_PRUEBA + (LISTA_AUSENCIAS,))
 
 
 @dataclass
@@ -466,7 +475,7 @@ def version_jp(general: dict, jp: dict, entradas: list[Entrada], tareas: Tareas,
 def iniciales(nombre: str, ausencias: Ausencias | None) -> str:
     """La sigla de la planilla si la persona está en ella; si no, las iniciales del nombre."""
     if ausencias:
-        clave = cruzar_nombre(nombre, ausencias.dias)
+        clave = cruzar_nombre(nombre, ausencias.siglas)
         if clave and ausencias.siglas.get(clave):
             return ausencias.siglas[clave]
     return "".join(x[0] for x in re.split(r"[^\w]+", nombre) if x).upper()
