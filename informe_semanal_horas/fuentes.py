@@ -9,6 +9,8 @@ from openpyxl import load_workbook
 
 from dep_clickup import ClickUpClient
 
+from .core import SS_REGISTRO
+
 ESPACIO = "901312509139"            # Proyectos Activos
 FOLDER_ADMIN = "901318508657"       # Administración (listas ADM-…)
 VENTANA_DIAS = 30
@@ -18,7 +20,8 @@ _CAMPOS = ["id", "name", "parent", "start_date", "due_date", "time_estimate"]
 
 
 def listas_fuente(cu: ClickUpClient) -> list[dict]:
-    """Listas «PJ-…» de cualquier folder de Proyectos Activos y todas las de Administración, con su JP."""
+    """Listas «PJ-…» de cualquier folder de Proyectos Activos, todas las de Administración, con su JP, y SS_REGISTRO: sus
+    tareas SS con responsable, fechas y estimate son la carga de propuestas («Propuestas (SS)», decisión del 2026-11-09)."""
     out = []
 
     def agregar(lista: dict, folder_id: str | None, folder: str, archivada: bool) -> None:
@@ -33,6 +36,7 @@ def listas_fuente(cu: ClickUpClient) -> list[dict]:
                 agregar(l, f["id"], f["name"].strip(), archived == "true")
     for l in cu.get(f"/space/{ESPACIO}/list", {"archived": "false"})["lists"]:
         agregar(l, None, "(sin folder)", False)
+    out.append({"id": SS_REGISTRO, "name": "SS_REGISTRO", "folder": "Propuestas", "archived": False, "jp": None})
     return out
 
 

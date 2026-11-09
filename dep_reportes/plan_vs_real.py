@@ -28,6 +28,7 @@ from .calendario import Calendario
 PESTAÑA = "plan_vs_real"
 SEMANAS_ATRAS, SEMANAS_ADELANTE = 4, 6
 SIN_RESPONSABLE, PROYECTO = "(sin responsable)", "(proyecto)"
+PROPUESTAS = "Propuestas (SS)"     # proyecto de la carga de propuestas (tareas SS de SS_REGISTRO con estimate)
 AUSENCIA = "(ausencia)"          # proyecto y estado de las filas de ausencia: filtrarlas para no sumarlas al plan
 OK, PARCIAL, SIN_REGISTRO, SIN_PLAN, FUTURO = "ok", "parcial", "sin_registro", "sin_plan", "futuro"
 UMBRAL_OK, UMBRAL_PARCIAL = 0.8, 0.5
@@ -219,6 +220,18 @@ def filas_ausencia(corte: dt.date, tipo_corte: str, horas: Mapping[tuple[str, dt
              "proyecto": AUSENCIA, "proyecto_nombre": AUSENCIA, "jp": "", "persona": p, "horas_planificadas": round(h, 4),
              "horas_registradas": None, "horas_registradas_ss": None, "cumplimiento": None, "estado": AUSENCIA,
              "horas_necesarias_semana": None} for (p, s), h in sorted(horas.items(), key=lambda x: (x[0][1], x[0][0])) if s in sems]
+
+
+def filas_propuestas(corte: dt.date, tipo_corte: str, list_id: str, plan: Mapping[tuple[str, dt.date], float]) -> list[dict]:
+    """Carga de propuestas: tareas SS de SS_REGISTRO con responsable, fechas y estimate (regla C), proyecto «Propuestas
+    (SS)» (decisión de Ale del 2026-11-09). Solo plan: las horas registradas en las SS siguen en horas_registradas_ss de
+    su proyecto."""
+    sems = set(semanas(corte))
+    return [{"fecha_corte": fecha_corte(corte), "corte": corte, "tipo_corte": tipo_corte, "semana_inicio": s, "list_id": list_id,
+             "proyecto": PROPUESTAS, "proyecto_nombre": PROPUESTAS, "jp": "", "persona": p, "horas_planificadas": round(h, 4),
+             "horas_registradas": None, "horas_registradas_ss": None, "cumplimiento": None, "estado": None,
+             "horas_necesarias_semana": None} for (p, s), h in sorted(plan.items(), key=lambda x: (x[0][1], x[0][0]))
+            if s in sems and h > 1e-9 and p != SIN_RESPONSABLE]
 
 
 # --- Hoja aparte ---------------------------------------------------------------------------------
