@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Iterable
 
 from dep_clickup.config import TZ
+from dep_reportes import plan_vs_real as PVR
 from dep_reportes.calendario import Calendario
 
 UN_DIA = dt.timedelta(days=1)
@@ -236,6 +237,11 @@ class Asignado:
     tareas: list = field(default_factory=list)          # filas de tareas_prog
 
 
+def ss_inactiva(t: dict) -> bool:
+    """SS ganada, perdida, cancelada o cerrada: no es carga de propuestas aunque tenga estimate y fechas (2026-11-09)."""
+    return (t.get("list") or {}).get("id") == SS_REGISTRO and (t.get("status") or "").strip().lower() in PVR.SS_INACTIVAS
+
+
 def calcular_asignado(tareas: Tareas, cal: Calendario, semanas_: list[dt.date]) -> dict[tuple[int, dt.date], Asignado]:
     """Por (persona, semana): tareas con responsable, fechas y estimación, prorrateadas por días hábiles. El
     time_estimate es por persona (convención de los JP, 05-nov): con varios responsables cuenta completo para cada uno,
@@ -244,7 +250,7 @@ def calcular_asignado(tareas: Tareas, cal: Calendario, semanas_: list[dt.date]) 
     objetivo = set(semanas_)
     for t in tareas.por_id.values():
         h = _horas_estimadas(t)
-        if h <= 0 or not t.get("assignees") or tareas.descendiente_estimada(t["id"]):
+        if h <= 0 or not t.get("assignees") or tareas.descendiente_estimada(t["id"]) or ss_inactiva(t):
             continue
         v = ventana(t)
         if v is None:

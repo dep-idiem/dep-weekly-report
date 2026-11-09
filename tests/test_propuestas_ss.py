@@ -13,9 +13,10 @@ CAL = Calendario(frozenset())
 L9, L16 = D(2026, 11, 9), D(2026, 11, 16)
 
 
-def _ss(i, h, asig=("Genesis",), s=L9, d=L9 + dt.timedelta(days=4)):
+def _ss(i, h, asig=("Genesis",), s=L9, d=L9 + dt.timedelta(days=4), estado="en elaboración", tipo="custom"):
     x = lambda v: dt.datetime(v.year, v.month, v.day, 12, tzinfo=TZ) if v else None
-    return Task(i, f"2026.03{i} | SS", None, "en preparación", "901324495476", x(s), x(d), int(h * 3_600_000) or None, tuple(asig), {})
+    return Task(i, f"2026.03{i} | SS", None, estado, "901324495476", x(s), x(d), int(h * 3_600_000) or None, tuple(asig), {},
+                status_type=tipo)
 
 
 def test_plan_vs_real_filas_de_propuestas_solo_con_responsable_fechas_y_estimate():
@@ -37,3 +38,15 @@ def test_informe_semanal_lee_ss_registro_como_propuestas():
          "list": {"id": IC.SS_REGISTRO, "name": "SS_REGISTRO"}, "status": "x", "assignees": [{"id": 7, "username": "Genesis"}]}
     a = IC.calcular_asignado(IC.Tareas.desde([t]), CAL, [L9])
     assert a[(7, L9)].horas == 8 and a[(7, L9)].listas == {IC.PROPUESTAS}
+
+
+def test_ss_ganadas_perdidas_canceladas_y_cerradas_no_son_carga():
+    ts = [_ss("1", 10), _ss("2", 5, estado="ganada"), _ss("3", 5, estado="Perdida"), _ss("4", 5, estado="cancelada"),
+          _ss("5", 5, estado="cerrada", tipo="closed"), _ss("6", 3, estado="asignada"), _ss("7", 2, estado="enviada")]
+    assert [t.id for t in PVR.ss_activas(ts)] == ["1", "6", "7"]
+    raw = lambda i, estado: {"id": i, "name": "SS", "parent": None, "time_estimate": 8 * 3_600_000, "start_date": None,
+                             "due_date": str(int(dt.datetime(2026, 11, 13, 12, tzinfo=TZ).timestamp() * 1000)),
+                             "list": {"id": IC.SS_REGISTRO, "name": "SS_REGISTRO"}, "status": estado,
+                             "assignees": [{"id": 7, "username": "Genesis"}]}
+    a = IC.calcular_asignado(IC.Tareas.desde([raw("a", "en elaboración"), raw("b", "ganada"), raw("c", "cerrada")]), CAL, [L9])
+    assert a[(7, L9)].horas == 8

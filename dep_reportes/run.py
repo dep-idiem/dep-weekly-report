@@ -740,9 +740,9 @@ def ejecutar(corte: dt.date, dry_run: bool = True, solo: str | None = None, modo
         cfg_aus = AUS.config()
         tramos = AUS.tramos_de_tareas(cu.list_tasks(AUS.lista_id()), cfg_aus.get("campo_tipo", "Tipo de ausencia"))
         corrida.plan_vs_real += PVR.filas_ausencia(corte, tipo_corte, AUS.horas_por_semana(AUS.dias_por_persona(tramos, modo.cal)))
-    if SS_REGISTRO_LIST_ID and not solo:  # carga de propuestas: tareas SS con responsable, fechas y estimate (regla C)
+    if SS_REGISTRO_LIST_ID and not solo:  # carga de propuestas: tareas SS activas con responsable, fechas y estimate (regla C)
         corrida.plan_vs_real += PVR.filas_propuestas(corte, tipo_corte, SS_REGISTRO_LIST_ID,
-                                                     PVR.plan_por_persona(cu.list_tasks(SS_REGISTRO_LIST_ID), modo.cal))
+                                                     PVR.plan_por_persona(PVR.ss_activas(cu.list_tasks(SS_REGISTRO_LIST_ID)), modo.cal))
     corrida.peticiones_clickup = dict(cu.request_log)
 
     nuevas: dict[str, list[dict]] = {t: [] for t in E.TABLAS}

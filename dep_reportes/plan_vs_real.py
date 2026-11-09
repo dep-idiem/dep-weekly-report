@@ -29,6 +29,8 @@ PESTAÑA = "plan_vs_real"
 SEMANAS_ATRAS, SEMANAS_ADELANTE = 4, 6
 SIN_RESPONSABLE, PROYECTO = "(sin responsable)", "(proyecto)"
 PROPUESTAS = "Propuestas (SS)"     # proyecto de la carga de propuestas (tareas SS de SS_REGISTRO con estimate)
+# SS que ya no son carga aunque tengan estimate y fechas (decisión de Ale del 2026-11-09). «cerrada» además es de tipo closed.
+SS_INACTIVAS = frozenset({"ganada", "perdida", "cancelada", "cerrada"})
 AUSENCIA = "(ausencia)"          # proyecto y estado de las filas de ausencia: filtrarlas para no sumarlas al plan
 OK, PARCIAL, SIN_REGISTRO, SIN_PLAN, FUTURO = "ok", "parcial", "sin_registro", "sin_plan", "futuro"
 UMBRAL_OK, UMBRAL_PARCIAL = 0.8, 0.5
@@ -220,6 +222,11 @@ def filas_ausencia(corte: dt.date, tipo_corte: str, horas: Mapping[tuple[str, dt
              "proyecto": AUSENCIA, "proyecto_nombre": AUSENCIA, "jp": "", "persona": p, "horas_planificadas": round(h, 4),
              "horas_registradas": None, "horas_registradas_ss": None, "cumplimiento": None, "estado": AUSENCIA,
              "horas_necesarias_semana": None} for (p, s), h in sorted(horas.items(), key=lambda x: (x[0][1], x[0][0])) if s in sems]
+
+
+def ss_activas(tareas: Sequence[Task]) -> list[Task]:
+    """Tareas SS que cuentan como carga de propuestas: sin las cerradas ni las ganadas, perdidas o canceladas."""
+    return [t for t in tareas if not t.cerrada and (t.status or "").strip().lower() not in SS_INACTIVAS]
 
 
 def filas_propuestas(corte: dt.date, tipo_corte: str, list_id: str, plan: Mapping[tuple[str, dt.date], float]) -> list[dict]:
